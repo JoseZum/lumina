@@ -39,6 +39,7 @@ tree-sitter-java = "0.23"
 
 # ─── Vector storage ────────────────────────────────────
 lancedb = "0.15"
+futures = "0.3"
 
 arrow-array = "53"
 arrow-schema = "53"
