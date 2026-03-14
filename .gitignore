@@ -1,3 +1,9 @@
-/target
-/.lumina
+﻿target/
+test_outputs/
+.lumina/
 *.lance
+*.txt
+*.log
+.DS_Store
+.vscode/
+
