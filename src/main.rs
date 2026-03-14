@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use lumina::store::{KeywordStore, VectorStore};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -68,7 +69,7 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Index { repo, force } => {
             let repo = std::fs::canonicalize(&repo)?;
-            let mut config = lumina::config::LuminaConfig::load(repo)?;
+            let config = lumina::config::LuminaConfig::load(repo)?;
 
             if force {
                 // Delete hash cache to force full re-index

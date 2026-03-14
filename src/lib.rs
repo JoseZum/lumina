@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 pub mod error;
 pub mod types;
 pub mod config;

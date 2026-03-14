@@ -140,7 +140,7 @@ impl Indexer {
                 .extension()
                 .and_then(|e| e.to_str())
                 .unwrap_or("");
-            if !self.chunker.supports(ext) {
+            if !self.chunker.is_supported(ext) {
                 continue;
             }
 
