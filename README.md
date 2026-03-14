@@ -100,30 +100,53 @@ Claude Code spends **80% of context window tokens on exploration** — reading f
 
 ## Installation
 
-### Prerequisites
-
-- **WSL Ubuntu** (Windows only — no MSVC build tools needed)
-- **Rust 1.94+** (in WSL)
-- **GCC** (in WSL — `sudo apt install build-essential`)
-- **Voyage API Key** ([get one here](https://www.voyageai.com/))
-
-### Build
+### npm Install (Recommended)
 
 ```bash
-# 1. Clone the repo (on Windows)
-cd C:\Users\jfzum\OneDrive\Documentos\Proyectos\lumina
-
-# 2. Build in WSL
-wsl -d Ubuntu -e bash -c '
-  source "$HOME/.cargo/env"
-  cd /home/jfzum/lumina
-  cargo build --release
-'
-
-# Binary will be at: /home/jfzum/lumina/target/release/lumina
+npm install -g lumina-search
 ```
 
-**Note:** Building on Windows filesystem causes issues. The project is copied to WSL's native filesystem (`/home/jfzum/lumina`) for compilation.
+This automatically:
+- Detects your platform (Linux, macOS, Windows)
+- Installs Rust if needed
+- Builds the binary (~5 minutes first time)
+- On Windows, builds inside WSL Ubuntu automatically
+
+**Prerequisites:**
+- Node.js >= 18
+- [Voyage API Key](https://www.voyageai.com/)
+- Windows only: WSL Ubuntu (`wsl --install -d Ubuntu`)
+
+After install, the `lumina` command is available globally.
+
+### From Source
+
+```bash
+git clone https://github.com/YOUR_USER/lumina.git
+cd lumina
+npm install
+```
+
+### Manual Install (no npm)
+
+<details>
+<summary>Click to expand</summary>
+
+#### Windows (PowerShell)
+
+```powershell
+.\install.ps1
+```
+
+#### Linux/macOS or WSL
+
+```bash
+bash install.sh
+exec bash
+lumina --version
+```
+
+</details>
 
 ---
 
@@ -132,15 +155,12 @@ wsl -d Ubuntu -e bash -c '
 ### 1. Index a Repository
 
 ```bash
-# Set your Voyage API key
+# In WSL (after installation)
 export VOYAGE_API_KEY="pa-your-key-here"
+lumina index --repo /mnt/c/path/to/your/project
 
-# Index a repo
-wsl -d Ubuntu -e bash -c '
-  source "$HOME/.cargo/env"
-  cd /home/jfzum/lumina
-  VOYAGE_API_KEY=pa-xxx ./target/release/lumina index --repo /path/to/repo
-'
+# Or from Windows PowerShell
+wsl -e bash -c 'export VOYAGE_API_KEY=pa-xxx && lumina index --repo /mnt/c/path/to/project'
 ```
 
 **What happens:**
@@ -160,11 +180,12 @@ lumina index --repo /path/to/repo --force
 ### 2. Query from CLI
 
 ```bash
-wsl -d Ubuntu -e bash -c '
-  source "$HOME/.cargo/env"
-  cd /home/jfzum/lumina
-  VOYAGE_API_KEY=pa-xxx ./target/release/lumina query "authentication middleware" -k 5 --repo /path/to/repo
-'
+# In WSL
+export VOYAGE_API_KEY="pa-your-key"
+lumina query "authentication middleware" -k 5 --repo /mnt/c/path/to/project
+
+# From Windows
+wsl -e bash -c 'export VOYAGE_API_KEY=pa-xxx && lumina query "authentication" --repo /mnt/c/path/to/project'
 ```
 
 Returns markdown-formatted results with code snippets.
@@ -178,17 +199,19 @@ Returns markdown-formatted results with code snippets.
   "mcpServers": {
     "lumina": {
       "command": "wsl",
-      "args": [
-        "-d", "Ubuntu",
-        "-e", "bash", "-c",
-        "source $HOME/.cargo/env && VOYAGE_API_KEY=pa-your-key /home/jfzum/lumina/target/release/lumina mcp --repo /mnt/c/path/to/your/project"
-      ]
+      "args": ["-e", "lumina", "mcp", "--repo", "/mnt/c/path/to/your/project"],
+      "env": {
+        "VOYAGE_API_KEY": "pa-your-key-here"
+      }
     }
   }
 }
 ```
 
-**Important:** Replace `/mnt/c/path/to/your/project` with the WSL path to your repo.
+**Important:**
+- Replace `/mnt/c/path/to/your/project` with the WSL path to your repo
+- Replace `pa-your-key-here` with your actual Voyage API key
+- First run `lumina index --repo /mnt/c/path/to/your/project` to create the index
 
 #### b. Restart Claude Code
 

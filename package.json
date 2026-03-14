@@ -1,0 +1,35 @@
+{
+  "name": "lumina-search",
+  "version": "0.1.0",
+  "description": "Local-first semantic code search for Claude Code via MCP",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_USER/lumina"
+  },
+  "bin": {
+    "lumina": "./bin/lumina.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "keywords": [
+    "mcp",
+    "claude",
+    "code-search",
+    "semantic-search",
+    "tree-sitter",
+    "embeddings"
+  ],
+  "files": [
+    "bin/",
+    "scripts/",
+    "src/",
+    "Cargo.toml",
+    "Cargo.lock",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
