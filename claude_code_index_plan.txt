@@ -1,0 +1,298 @@
+import { useState } from "react";
+
+const phases = [
+  {
+    id: "P0",
+    name: "Core Engine",
+    time: "Semana 1–2",
+    color: "#00FF88",
+    items: [
+      { name: "Tree-sitter chunker", detail: "AST-aware: extrae funciones, clases, métodos. Chunk = 200–500 tokens. Sin cortar a mitad de línea." },
+      { name: "LanceDB local", detail: "100% local, sin servidor. Archivo .lance en el repo. Zero setup para el usuario." },
+      { name: "Voyage code-3 embeddings", detail: "Mejor modelo de código disponible. 1024 dims. Outperforma OpenAI text-embedding-3-large en code retrieval." },
+      { name: "SHA-256 incremental indexing", detail: "Hash por chunk. Si no cambió, skip embedding. Re-index incremental en <100ms para repos grandes." },
+      { name: "CLI: claude-index", detail: "`claude-index init` + `claude-index query`. Funciona standalone, sin Claude Code." },
+    ]
+  },
+  {
+    id: "P1",
+    name: "Hybrid Retrieval",
+    time: "Semana 3",
+    color: "#FF6B35",
+    items: [
+      { name: "BM25 keyword search", detail: "tantivy (Rust) o whoosh (Python). Para queries exactos: nombres de funciones, tokens específicos." },
+      { name: "Reciprocal Rank Fusion", detail: "Combina resultados vector + keyword sin necesitar pesos manuales. Formula: RRF(d) = Σ 1/(k + rank(d))." },
+      { name: "Symbol index", detail: "Tabla plana: symbol_name → file:line. Lookup O(1) para 'find definition de UserService.create_user'." },
+      { name: "Cross-encoder reranker", detail: "mxbai-rerank-large (Apache 2.0). Rescora top-30 candidates. +40% precision sobre solo embeddings." },
+    ]
+  },
+  {
+    id: "P2",
+    name: "MCP Server",
+    time: "Semana 3–4",
+    color: "#8B5CF6",
+    items: [
+      { name: "4 tools core", detail: "semantic_search(q, k) · get_file_span(file, start, end) · find_symbol(name) · list_indexed_files()" },
+      { name: "Stdio transport", detail: "Claude Code lo levanta como subprocess. Zero config de red. `npx claude-code-index` en .mcp.json." },
+      { name: "Token budget enforcer", detail: "Cada respuesta ≤ 2000 tokens. Metadata primero (file, symbol, lines), código solo si se pide explícito." },
+      { name: "Auto-trigger hints", detail: "Tool descriptions diseñadas para que Claude las llame automáticamente sin que el usuario lo pida." },
+    ]
+  },
+  {
+    id: "P3",
+    name: "El Diferenciador",
+    time: "Semana 4–5",
+    color: "#FFD700",
+    items: [
+      { name: "Symbol dependency graph", detail: "Tree-sitter → grafo: A llama a B, B hereda de C. Responde 'qué funciones llaman a X' sin leer archivos." },
+      { name: "Agent trace training data", detail: "Loggear qué chunks Claude realmente usa. Dataset para fine-tune del embedding model. Cursor lo hace, nadie más." },
+      { name: "Repo map comprimido", detail: "Como Aider pero mejor: solo firmas de funciones + callers top. Fit en 1K tokens. Claude entiende el repo entero." },
+      { name: "Watch mode + hot reload", detail: "File watcher re-indexa archivos modificados en background. Index siempre fresh sin intervención del usuario." },
+    ]
+  },
+];
+
+const stackItems = [
+  { layer: "Parsing", tech: "tree-sitter", why: "20+ lenguajes, incremental, battle-tested" },
+  { layer: "Embeddings", tech: "voyage-code-3", why: "SOTA en code retrieval, API simple" },
+  { layer: "Vector DB", tech: "LanceDB", why: "local, sin servidor, .lance file en repo" },
+  { layer: "Keyword", tech: "tantivy/BM25", why: "Rust, rápido, sin deps pesadas" },
+  { layer: "Reranker", tech: "mxbai-rerank", why: "Apache 2.0, 8K tokens, código+texto" },
+  { layer: "MCP", tech: "FastMCP (Python)", why: "SDK oficial, stdio, type-safe tools" },
+  { layer: "CLI", tech: "Click + Rich", why: "bonito en terminal, fácil de usar" },
+];
+
+const killShots = [
+  { title: "Index en <30s", desc: "Un repo de 10K archivos indexado en 30 segundos. Cursor tarda minutos. La gente lo va a notar." },
+  { title: "100% local", desc: "Tu código nunca sale de tu máquina. Cero cloud, cero API keys obligatorias. Privacy first = viral entre devs serios." },
+  { title: "Claude lee menos, entiende más", desc: "Demo en video: mismo query, Claude Code nativo vs claude-code-index. La diferencia en tokens es brutal." },
+  { title: "npx install", desc: "Una línea en tu .mcp.json y funciona. No hay nada que instalar manualmente. Barrier to entry = cero." },
+];
+
+export default function App() {
+  const [activePhase, setActivePhase] = useState(0);
+  const [hoveredKill, setHoveredKill] = useState(null);
+
+  return (
+    <div style={{
+      minHeight: "100vh",
+      background: "#080810",
+      color: "#E8E8F0",
+      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+      padding: "0",
+      overflowX: "hidden",
+    }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Syne:wght@700;800&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        ::-webkit-scrollbar { width: 4px; } 
+        ::-webkit-scrollbar-track { background: #0d0d1a; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+        .phase-btn { transition: all 0.2s; cursor: pointer; border: none; background: transparent; }
+        .phase-btn:hover { opacity: 0.85; }
+        .item-row { transition: background 0.15s; border-radius: 6px; }
+        .item-row:hover { background: rgba(255,255,255,0.04); }
+        .kill-card { transition: all 0.2s; cursor: default; }
+        .kill-card:hover { transform: translateY(-2px); }
+        .stack-row:hover { background: rgba(255,255,255,0.03); }
+        @keyframes pulse-dot { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+        @keyframes slide-in { from { opacity:0; transform: translateX(-8px); } to { opacity:1; transform: translateX(0); } }
+        .animated { animation: slide-in 0.25s ease both; }
+        .glow { text-shadow: 0 0 20px currentColor; }
+      `}</style>
+
+      {/* Header */}
+      <div style={{ borderBottom: "1px solid #1a1a2e", padding: "28px 40px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
+            <span style={{ 
+              fontFamily: "'Syne', sans-serif", fontSize: 26, fontWeight: 800, 
+              background: "linear-gradient(90deg, #00FF88, #8B5CF6)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent"
+            }}>claude-code-index</span>
+            <span style={{ fontSize: 10, background: "#1a1a2e", border: "1px solid #333", borderRadius: 4, padding: "2px 8px", color: "#888", letterSpacing: 1 }}>v0.1.0-alpha</span>
+          </div>
+          <p style={{ fontSize: 12, color: "#666", letterSpacing: 0.5 }}>semantic code search · MCP server · local-first · Claude Code native</p>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#00FF88", animation: "pulse-dot 2s infinite" }} />
+          <span style={{ fontSize: 11, color: "#00FF88" }}>BUILD PLAN</span>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 24px" }}>
+
+        {/* Kill shots */}
+        <section style={{ marginBottom: 52 }}>
+          <p style={{ fontSize: 11, color: "#666", letterSpacing: 2, marginBottom: 16, textTransform: "uppercase" }}>¿Por qué va a romper Claude Code?</p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+            {killShots.map((k, i) => (
+              <div key={i} className="kill-card" style={{
+                background: "linear-gradient(135deg, #0d0d1a, #111120)",
+                border: "1px solid #1e1e35",
+                borderRadius: 10,
+                padding: "20px 20px",
+                position: "relative",
+                overflow: "hidden",
+              }}>
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: ["#00FF88","#FF6B35","#8B5CF6","#FFD700"][i], opacity: 0.8 }} />
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "#E8E8F0" }}>{k.title}</div>
+                <div style={{ fontSize: 11, color: "#666", lineHeight: 1.6 }}>{k.desc}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Phase selector + detail */}
+        <section style={{ marginBottom: 52 }}>
+          <p style={{ fontSize: 11, color: "#666", letterSpacing: 2, marginBottom: 16, textTransform: "uppercase" }}>Roadmap de construcción</p>
+          
+          {/* Phase tabs */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
+            {phases.map((p, i) => (
+              <button key={i} className="phase-btn" onClick={() => setActivePhase(i)} style={{
+                padding: "8px 18px",
+                borderRadius: 6,
+                fontSize: 12,
+                fontFamily: "inherit",
+                fontWeight: activePhase === i ? 700 : 400,
+                color: activePhase === i ? "#080810" : p.color,
+                background: activePhase === i ? p.color : "transparent",
+                border: `1px solid ${activePhase === i ? p.color : "#1e1e35"}`,
+                letterSpacing: 0.5,
+              }}>
+                <span style={{ opacity: 0.7, marginRight: 6 }}>{p.id}</span>{p.name}
+              </button>
+            ))}
+          </div>
+
+          {/* Phase detail */}
+          <div className="animated" key={activePhase} style={{
+            background: "#0a0a16",
+            border: `1px solid ${phases[activePhase].color}22`,
+            borderLeft: `3px solid ${phases[activePhase].color}`,
+            borderRadius: "0 10px 10px 0",
+            padding: "24px 28px",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+              <div>
+                <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 20, fontWeight: 800, color: phases[activePhase].color }} className="glow">{phases[activePhase].name}</span>
+              </div>
+              <span style={{ fontSize: 11, color: "#555", background: "#111", border: "1px solid #222", borderRadius: 4, padding: "3px 10px" }}>{phases[activePhase].time}</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {phases[activePhase].items.map((item, j) => (
+                <div key={j} className="item-row" style={{ padding: "12px 14px", display: "grid", gridTemplateColumns: "200px 1fr", gap: 16, alignItems: "start" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 5, height: 5, borderRadius: "50%", background: phases[activePhase].color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "#ccc" }}>{item.name}</span>
+                  </div>
+                  <span style={{ fontSize: 11, color: "#555", lineHeight: 1.7 }}>{item.detail}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Stack table */}
+        <section style={{ marginBottom: 52 }}>
+          <p style={{ fontSize: 11, color: "#666", letterSpacing: 2, marginBottom: 16, textTransform: "uppercase" }}>Stack técnico definitivo</p>
+          <div style={{ border: "1px solid #1a1a2e", borderRadius: 10, overflow: "hidden" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "120px 160px 1fr", background: "#0d0d1a", padding: "10px 20px", fontSize: 10, color: "#444", letterSpacing: 1, textTransform: "uppercase", borderBottom: "1px solid #1a1a2e" }}>
+              <span>Layer</span><span>Tech</span><span>Razón</span>
+            </div>
+            {stackItems.map((s, i) => (
+              <div key={i} className="stack-row" style={{ display: "grid", gridTemplateColumns: "120px 160px 1fr", padding: "13px 20px", fontSize: 12, borderBottom: i < stackItems.length - 1 ? "1px solid #111" : "none", alignItems: "center" }}>
+                <span style={{ color: "#555", fontSize: 11 }}>{s.layer}</span>
+                <span style={{ color: "#00FF88", fontWeight: 600 }}>{s.tech}</span>
+                <span style={{ color: "#555", fontSize: 11 }}>{s.why}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Architecture ASCII */}
+        <section style={{ marginBottom: 52 }}>
+          <p style={{ fontSize: 11, color: "#666", letterSpacing: 2, marginBottom: 16, textTransform: "uppercase" }}>Flujo de datos</p>
+          <div style={{ background: "#0a0a14", border: "1px solid #1a1a2e", borderRadius: 10, padding: "28px 32px", fontSize: 11, lineHeight: 2.2, color: "#666" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+              {[
+                ["REPO", "#E8E8F0", "  git diff → sólo archivos cambiados"],
+                ["↓", "#333", ""],
+                ["TREE-SITTER PARSER", "#FF6B35", "  AST → funciones / clases / métodos"],
+                ["↓", "#333", ""],
+                ["CHUNKER", "#FF6B35", "  200–500 tokens · SHA-256 hash · skip si unchanged"],
+                ["↓", "#333", ""],
+                ["VOYAGE-CODE-3", "#8B5CF6", "  float32[1024] · API key o local"],
+                ["↓", "#333", ""],
+                ["LANCEDB  +  BM25 INDEX", "#00FF88", "  .lance file en repo · tantivy para keyword"],
+                ["↓", "#333", ""],
+                ["QUERY TIME: Claude pregunta", "#FFD700", "  semantic_search('how does auth work?', k=8)"],
+                ["↓", "#333", ""],
+                ["RRF FUSION + RERANKER", "#FFD700", "  vector + keyword → top-5 rerankeados"],
+                ["↓", "#333", ""],
+                ["MCP RESPONSE", "#00FF88", "  ≤2000 tokens · file + symbol + 20–40 lines"],
+              ].map(([label, color, note], i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ color, fontWeight: label.startsWith("↓") ? 400 : 600, minWidth: 260 }}>{label}</span>
+                  <span style={{ color: "#333", fontSize: 10 }}>{note}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* The moat */}
+        <section style={{ marginBottom: 32 }}>
+          <p style={{ fontSize: 11, color: "#666", letterSpacing: 2, marginBottom: 16, textTransform: "uppercase" }}>El moat — lo que nadie más tiene</p>
+          <div style={{
+            background: "linear-gradient(135deg, #0d0d1a 0%, #0a0818 100%)",
+            border: "1px solid #FFD70033",
+            borderRadius: 10,
+            padding: "28px 32px",
+          }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28 }}>
+              {[
+                {
+                  title: "Agent trace dataset",
+                  body: "Loggeamos qué chunks Claude realmente usa en cada sesión. Con suficientes usuarios, podemos fine-tunear el embedding model exactamente como Cursor hizo. Nadie más tiene este dataset para Claude Code.",
+                  color: "#FFD700"
+                },
+                {
+                  title: "Symbol dependency graph",
+                  body: "No es RAG. Es un grafo real: A() llama B(), B() hereda C. Claude puede preguntar 'qué se rompe si cambio esta función' y el grafo responde sin leer un solo archivo.",
+                  color: "#00FF88"
+                },
+                {
+                  title: "Priompt-style para Claude Code",
+                  body: "Context budget manager: cada tool response tiene prioridad. Si el contexto se llena, el sistema hace trim automático de los chunks menos relevantes. Claude nunca ve basura.",
+                  color: "#8B5CF6"
+                },
+                {
+                  title: "Cross-repo index compartido",
+                  body: "Misma idea que Cursor: si dos devs tienen el mismo repo, el index se comparte via hash. Index público de librerías populares (React, Express, FastAPI) disponible out of the box.",
+                  color: "#FF6B35"
+                },
+              ].map((m, i) => (
+                <div key={i}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: m.color, marginBottom: 8 }}>{m.title}</div>
+                  <div style={{ fontSize: 11, color: "#555", lineHeight: 1.7 }}>{m.body}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Footer */}
+        <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 24, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 10, color: "#333" }}>claude-code-index · local-first semantic code search · MCP native</span>
+          <div style={{ display: "flex", gap: 20 }}>
+            {["Python 3.11+", "Apache 2.0", "Claude Code MCP"].map((t, i) => (
+              <span key={i} style={{ fontSize: 10, color: "#444", border: "1px solid #1a1a2e", borderRadius: 4, padding: "2px 8px" }}>{t}</span>
+            ))}
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}

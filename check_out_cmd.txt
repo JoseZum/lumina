@@ -1,0 +1,37 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling getrandom v0.3.4
+   Compiling serde_core v1.0.228
+   Compiling libm v0.2.16
+   Compiling num-traits v0.2.19
+   Compiling serde v1.0.228
+   Compiling windows_x86_64_msvc v0.52.6
+    Checking ryu v1.0.23
+   Compiling zerocopy v0.8.42
+    Checking either v1.15.0
+    Checking hashbrown v0.16.1
+    Checking log v0.4.29
+    Checking stable_deref_trait v1.2.1
+    Checking base64 v0.22.1
+    Checking getrandom v0.2.17
+    Checking allocator-api2 v0.2.21
+error: linker `link.exe` not found
+  |
+  = note: program not found
+
+note: the msvc targets depend on the msvc linker but `link.exe` was not found
+
+note: please ensure that Visual Studio 2017 or later, or Build Tools for Visual Studio were installed with the Visual C++ option.
+
+note: VS Code is a different product, and is not sufficient.
+
+error: could not compile `num-traits` (build script) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `windows_x86_64_msvc` (build script) due to 1 previous error
+error: could not compile `quote` (build script) due to 1 previous error
+error: could not compile `getrandom` (build script) due to 1 previous error
+error: could not compile `proc-macro2` (build script) due to 1 previous error
+error: could not compile `serde_core` (build script) due to 1 previous error
+error: could not compile `libm` (build script) due to 1 previous error
+error: could not compile `serde` (build script) due to 1 previous error
+error: could not compile `zerocopy` (build script) due to 1 previous error
