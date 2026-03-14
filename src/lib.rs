@@ -1,3 +1,6 @@
+pub mod error;
+pub mod types;
+pub mod config;
 pub mod chunker;
 pub mod embeddings;
 pub mod store;

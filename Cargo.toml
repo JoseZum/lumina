@@ -27,6 +27,7 @@ rayon = "1.10"
 
 # ─── Tree-sitter core ──────────────────────────────────
 tree-sitter = "0.24"
+streaming-iterator = "0.1"
 
 # ─── Tree-sitter language grammars ──────────────────────
 tree-sitter-python = "0.23"
