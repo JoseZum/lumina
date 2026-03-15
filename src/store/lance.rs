@@ -14,15 +14,15 @@ use crate::types::{Chunk, SearchResult, SearchSource, SymbolKind};
 use super::VectorStore;
 
 const TABLE_NAME: &str = "chunks";
-const EMBEDDING_DIM: i32 = 1024;
 
 pub struct LanceStore {
     rt: tokio::runtime::Runtime,
     db: lancedb::Connection,
+    embedding_dim: i32,
 }
 
 impl LanceStore {
-    pub fn new(db_path: &Path) -> Result<Self> {
+    pub fn new(db_path: &Path, embedding_dim: usize) -> Result<Self> {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -37,10 +37,14 @@ impl LanceStore {
                 .map_err(|e| LuminaError::VectorStoreError(e.to_string()))
         })?;
 
-        Ok(Self { rt, db })
+        Ok(Self {
+            rt,
+            db,
+            embedding_dim: embedding_dim as i32,
+        })
     }
 
-    fn arrow_schema() -> Arc<ArrowSchema> {
+    fn arrow_schema(&self) -> Arc<ArrowSchema> {
         Arc::new(ArrowSchema::new(vec![
             Field::new("chunk_id", DataType::Utf8, false),
             Field::new("file", DataType::Utf8, false),
@@ -54,15 +58,15 @@ impl LanceStore {
                 "vector",
                 DataType::FixedSizeList(
                     Arc::new(Field::new("item", DataType::Float32, true)),
-                    EMBEDDING_DIM,
+                    self.embedding_dim,
                 ),
                 false,
             ),
         ]))
     }
 
-    fn chunks_to_batch(chunks: &[Chunk]) -> Result<RecordBatch> {
-        let schema = Self::arrow_schema();
+    fn chunks_to_batch(&self, chunks: &[Chunk]) -> Result<RecordBatch> {
+        let schema = self.arrow_schema();
 
         let chunk_ids: Vec<&str> = chunks.iter().map(|c| c.id.as_str()).collect();
         let files: Vec<&str> = chunks.iter().map(|c| c.file.as_str()).collect();
@@ -79,10 +83,10 @@ impl LanceStore {
             let emb = chunk.embedding.as_ref().ok_or_else(|| {
                 LuminaError::VectorStoreError("Chunk missing embedding".to_string())
             })?;
-            if emb.len() != EMBEDDING_DIM as usize {
+            if emb.len() != self.embedding_dim as usize {
                 return Err(LuminaError::VectorStoreError(format!(
                     "Embedding dimension mismatch: expected {}, got {}",
-                    EMBEDDING_DIM,
+                    self.embedding_dim,
                     emb.len()
                 )));
             }
@@ -93,7 +97,7 @@ impl LanceStore {
         let list_field = Arc::new(Field::new("item", DataType::Float32, true));
         let vector_array = FixedSizeListArray::try_new(
             list_field.into(),
-            EMBEDDING_DIM,
+            self.embedding_dim,
             Arc::new(values_array),
             None,
         ).map_err(|e| LuminaError::VectorStoreError(e.to_string()))?;
@@ -199,8 +203,8 @@ impl VectorStore for LanceStore {
             return Ok(());
         }
 
-        let batch = Self::chunks_to_batch(chunks)?;
-        let schema = Self::arrow_schema();
+        let batch = self.chunks_to_batch(chunks)?;
+        let schema = self.arrow_schema();
 
         self.rt.block_on(async {
             let table_names = self

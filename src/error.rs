@@ -19,8 +19,8 @@ pub enum LuminaError {
     #[error("Embedding API rate limited. Retry after {retry_after_secs}s")]
     EmbeddingRateLimited { retry_after_secs: u64 },
 
-    #[error("No embedding API key configured. Set VOYAGE_API_KEY env var.")]
-    MissingApiKey,
+    #[error("No API key set. Set {env_var} environment variable.")]
+    MissingApiKey { env_var: String },
 
     // ── Reranker ───────────────────────────────────────
     #[error("Reranker API error: {0}")]

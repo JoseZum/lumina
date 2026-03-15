@@ -1,6 +1,9 @@
 pub mod voyage;
+pub mod openai;
+pub mod local;
 
-use crate::error::Result;
+use crate::config::{EmbeddingProvider, LuminaConfig};
+use crate::error::{LuminaError, Result};
 
 /// Trait for text embedding models.
 ///
@@ -76,6 +79,39 @@ fn deterministic_embedding(text: &str, dims: usize) -> Vec<f32> {
     }
 
     vec
+}
+
+/// Create the appropriate embedder based on config.
+pub fn create_embedder(config: &LuminaConfig) -> Result<Box<dyn Embedder>> {
+    match config.embedding_provider {
+        EmbeddingProvider::Local => {
+            Ok(Box::new(local::LocalEmbedder::new(&config.embedding_model)?))
+        }
+        EmbeddingProvider::Voyage => {
+            let api_key = config.voyage_api_key.clone().ok_or_else(|| {
+                LuminaError::MissingApiKey {
+                    env_var: "VOYAGE_API_KEY".to_string(),
+                }
+            })?;
+            Ok(Box::new(voyage::VoyageEmbedder::new(
+                api_key,
+                config.embedding_model.clone(),
+                config.embedding_batch_size,
+            )))
+        }
+        EmbeddingProvider::OpenAi => {
+            let api_key = config.openai_api_key.clone().ok_or_else(|| {
+                LuminaError::MissingApiKey {
+                    env_var: "OPENAI_API_KEY".to_string(),
+                }
+            })?;
+            Ok(Box::new(openai::OpenAiEmbedder::new(
+                api_key,
+                config.embedding_model.clone(),
+                config.embedding_batch_size,
+            )))
+        }
+    }
 }
 
 #[cfg(test)]

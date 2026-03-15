@@ -12,9 +12,7 @@ pub mod mcp;
 
 use crate::chunker::TreeSitterChunker;
 use crate::config::LuminaConfig;
-use crate::embeddings::voyage::VoyageEmbedder;
-use crate::embeddings::MockEmbedder;
-use crate::error::{LuminaError, Result};
+use crate::error::Result;
 use crate::indexer::Indexer;
 use crate::search::reranker::NoopReranker;
 use crate::search::SearchEngine;
@@ -28,18 +26,12 @@ pub fn create_indexer(config: &LuminaConfig) -> Result<Indexer> {
         config.min_chunk_tokens,
     ));
 
-    let embedder: Box<dyn embeddings::Embedder> = if let Some(ref key) = config.voyage_api_key {
-        Box::new(VoyageEmbedder::new(
-            key.clone(),
-            config.voyage_model.clone(),
-            config.embedding_batch_size,
-        ))
-    } else {
-        eprintln!("Warning: No VOYAGE_API_KEY set. Using mock embedder (results will be random).");
-        Box::new(MockEmbedder::new(1024))
-    };
+    let embedder = embeddings::create_embedder(config)?;
 
-    let vector_store = Box::new(LanceStore::new(&config.lance_path())?);
+    let vector_store = Box::new(LanceStore::new(
+        &config.lance_path(),
+        config.embedding_dimensions,
+    )?);
     let keyword_store = Box::new(TantivyStore::new(&config.tantivy_path())?);
 
     Indexer::new(chunker, embedder, vector_store, keyword_store, config.clone())
@@ -47,18 +39,12 @@ pub fn create_indexer(config: &LuminaConfig) -> Result<Indexer> {
 
 /// Create a SearchEngine with all components wired up.
 pub fn create_search_engine(config: &LuminaConfig) -> Result<SearchEngine> {
-    let embedder: Box<dyn embeddings::Embedder> = if let Some(ref key) = config.voyage_api_key {
-        Box::new(VoyageEmbedder::new(
-            key.clone(),
-            config.voyage_model.clone(),
-            config.embedding_batch_size,
-        ))
-    } else {
-        eprintln!("Warning: No VOYAGE_API_KEY set. Using mock embedder (results will be random).");
-        Box::new(MockEmbedder::new(1024))
-    };
+    let embedder = embeddings::create_embedder(config)?;
 
-    let vector_store = Box::new(LanceStore::new(&config.lance_path())?);
+    let vector_store = Box::new(LanceStore::new(
+        &config.lance_path(),
+        config.embedding_dimensions,
+    )?);
     let keyword_store = Box::new(TantivyStore::new(&config.tantivy_path())?);
     let reranker = Box::new(NoopReranker);
 
