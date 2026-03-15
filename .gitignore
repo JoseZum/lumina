@@ -7,5 +7,6 @@ test_outputs/
 .DS_Store
 .vscode/
 release/
+builds/
 node_modules/
 

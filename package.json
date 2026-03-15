@@ -1,6 +1,6 @@
 {
   "name": "lumina-search",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Local-first semantic code search for Claude Code via MCP",
   "license": "Apache-2.0",
   "repository": {

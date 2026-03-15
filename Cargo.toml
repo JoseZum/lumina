@@ -1,11 +1,11 @@
 [package]
 name = "lumina"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
 rust-version = "1.75"
 description = "Semantic code search MCP server for Claude Code"
 license = "Apache-2.0"
-repository = "https://github.com/YOUR_USER/lumina"
+repository = "https://github.com/JoseZum/lumina"
 
 [[bin]]
 name = "lumina"
