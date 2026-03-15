@@ -1,0 +1,10 @@
+.git/
+.github/
+.claude/
+.lumina/
+target/
+*.log
+.gitignore
+install.sh
+install.ps1
+tests/
