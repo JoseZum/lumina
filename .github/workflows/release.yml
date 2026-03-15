@@ -29,15 +29,6 @@ jobs:
             npm_dir: linux-x64
             npm_bin: lumina
 
-          - os: ubuntu-latest
-            platform: linux-arm64
-            target: aarch64-unknown-linux-gnu
-            binary: lumina
-            artifact: lumina-linux-arm64
-            npm_dir: linux-arm64
-            npm_bin: lumina
-            cross: true
-
           - os: macos-latest
             platform: macos-arm64
             target: aarch64-apple-darwin
@@ -63,11 +54,6 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install cross-compilation tools (Linux ARM64)
-        if: matrix.cross
-        run: |
-          cargo install cross --git https://github.com/cross-rs/cross
-
       - name: Install protoc (Ubuntu)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
@@ -81,13 +67,7 @@ jobs:
         run: choco install protoc -y
 
       - name: Build
-        run: |
-          if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.target }}
-          else
-            cargo build --release --target ${{ matrix.target }}
-          fi
-        shell: bash
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Prepare binary
         shell: bash
@@ -163,12 +143,6 @@ jobs:
           name: npm-linux-x64
           path: npm/linux-x64/
 
-      - name: Download linux-arm64
-        uses: actions/download-artifact@v4
-        with:
-          name: npm-linux-arm64
-          path: npm/linux-arm64/
-
       - name: Download darwin-arm64
         uses: actions/download-artifact@v4
         with:
@@ -185,7 +159,7 @@ jobs:
       - name: Verify platform package contents
         run: |
           FAIL=0
-          for dir in win32-x64 darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+          for dir in win32-x64 darwin-arm64 darwin-x64 linux-x64; do
             if [ ! -d "npm/$dir/bin" ] || [ -z "$(ls -A npm/$dir/bin/ 2>/dev/null)" ]; then
               echo "FATAL: npm/$dir/bin/ is missing or empty"
               FAIL=1
@@ -208,12 +182,6 @@ jobs:
 
       - name: Publish @lumina-search/linux-x64
         working-directory: npm/linux-x64
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish @lumina-search/linux-arm64
-        working-directory: npm/linux-arm64
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -17,8 +17,7 @@
     "@lumina-search/win32-x64": "0.3.0",
     "@lumina-search/darwin-arm64": "0.3.0",
     "@lumina-search/darwin-x64": "0.3.0",
-    "@lumina-search/linux-x64": "0.3.0",
-    "@lumina-search/linux-arm64": "0.3.0"
+    "@lumina-search/linux-x64": "0.3.0"
   },
   "keywords": [
     "mcp",

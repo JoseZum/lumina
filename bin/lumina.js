@@ -11,7 +11,6 @@ const PLATFORM_PACKAGES = {
   "darwin-arm64": { pkg: "@lumina-search/darwin-arm64", bin: "bin/lumina" },
   "darwin-x64": { pkg: "@lumina-search/darwin-x64", bin: "bin/lumina" },
   "linux-x64": { pkg: "@lumina-search/linux-x64", bin: "bin/lumina" },
-  "linux-arm64": { pkg: "@lumina-search/linux-arm64", bin: "bin/lumina" },
 };
 
 function getPlatformKey() {
