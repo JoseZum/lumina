@@ -9,6 +9,7 @@ pub mod store;
 pub mod search;
 pub mod indexer;
 pub mod mcp;
+pub mod init;
 
 use crate::chunker::TreeSitterChunker;
 use crate::config::LuminaConfig;

@@ -1,307 +1,278 @@
 # Lumina
 
-**Local-first semantic code search for Claude Code via MCP**
+**Semantic code search for Claude Code**
 
-Lumina is a Rust MCP server that provides Claude Code with semantic code search capabilities using hybrid retrieval (vector embeddings + BM25 keyword search). Instead of reading files line-by-line, Claude can now search your codebase semantically — like Cursor, but local, fast, and under your control.
-
----
-
-## What Problem Does This Solve?
-
-Claude Code spends **80% of context window tokens on exploration** — reading files to understand your codebase. For large projects (10K+ files), this burns through tokens fast and slows down responses.
-
-**Lumina fixes this by:**
-- **Semantic search** — Claude asks "authentication middleware", Lumina returns relevant code chunks
-- **Local & fast** — No cloud dependencies, indexes 100K files in <30s
-- **Incremental** — Only re-indexes changed files (SHA-256 caching)
-- **Symbol-aware** — Understands functions, classes, structs across 6 languages
-
----
-
-## How It Works
+Give Claude deep understanding of your codebase. Instead of reading files one-by-one, Claude searches your code semantically — like having a senior developer who's read every line.
 
 ```
-┌─────────────────┐
-│  Claude Code    │
-│  (MCP client)   │
-└────────┬────────┘
-         │ JSON-RPC over stdio
-         ▼
-┌─────────────────┐      ┌──────────────────┐
-│  Lumina MCP     │◄────►│  .lumina/        │
-│  Server         │      │  ├─ index.lance/ │ (vector embeddings)
-└────────┬────────┘      │  ├─ tantivy/     │ (BM25 keyword index)
-         │               │  └─ hashes.bin   │ (SHA-256 cache)
-         │               └──────────────────┘
-         ▼
-   Search Pipeline:
-   1. Tree-sitter → Chunk code (AST-aware)
-   2. Voyage API  → Embed chunks (1024-dim vectors)
-   3. LanceDB     → Vector search (ANN)
-   4. Tantivy     → Keyword search (BM25)
-   5. RRF         → Fuse results (Reciprocal Rank Fusion)
-   6. Return      → Top-k results to Claude
+You:    "Find where authentication is handled"
+Claude: Found 5 results:
+
+  src/auth/middleware.rs:23     verify_jwt_token()        0.94
+  src/auth/provider.rs:89      authenticate_user()        0.91
+  src/routes/login.rs:12       handle_login()             0.87
 ```
 
 ---
 
-## Architecture Overview
+## Quick Start
 
-### Core Modules
-
-| Module | Files | Purpose |
-|--------|-------|---------|
-| **Types** | `types.rs`, `error.rs`, `config.rs` | Foundation types: `Chunk`, `SearchResult`, `LuminaError`, `LuminaConfig` |
-| **Chunker** | `chunker/{mod,treesitter,languages}.rs` | Tree-sitter AST parsing → semantic chunks (functions, classes, methods) |
-| **Embeddings** | `embeddings/{mod,voyage}.rs` | Voyage code-3 API client (1024-dim vectors), MockEmbedder for testing |
-| **Storage** | `store/{mod,lance,tantivy_store}.rs` | LanceDB (vector store) + Tantivy (BM25 keyword store) |
-| **Search** | `search/{mod,rrf,reranker}.rs` | Hybrid search pipeline: RRF fusion, reranking, result formatting |
-| **Indexer** | `indexer/{mod,hasher}.rs` | Incremental indexing pipeline with SHA-256 caching |
-| **MCP Server** | `mcp/{mod,protocol,handler,tools}.rs` | JSON-RPC 2.0 stdio server with 4 tools |
-| **CLI** | `main.rs`, `lib.rs` | CLI entry point + factory functions |
-
-### Data Flow: Indexing
-
-```
-1. Walk repo (ignore .gitignore, skip binaries, large files)
-   ↓
-2. Filter changed files (SHA-256 hash check)
-   ↓
-3. Parse with tree-sitter (parallel via rayon)
-   ↓
-4. Extract chunks (functions, classes, methods)
-   ↓
-5. Embed chunks (Voyage API, batched)
-   ↓
-6. Store in LanceDB (vectors) + Tantivy (keywords)
-   ↓
-7. Save hashes.bin for next incremental run
-```
-
-### Data Flow: Searching
-
-```
-1. Claude sends: semantic_search("authentication")
-   ↓
-2. Embed query → [0.234, 0.891, ..., 0.456] (1024-dim)
-   ↓
-3. Vector search (LanceDB) → top 30 candidates
-   ↓
-4. Keyword search (Tantivy BM25) → top 30 candidates
-   ↓
-5. RRF fusion → merge & rank by RRF score
-   ↓
-6. Format results (markdown, 2000 token budget)
-   ↓
-7. Return to Claude
-```
-
----
-
-## Installation
+### 1. Install
 
 ```bash
 npm install -g lumina-search
 ```
 
-Prerequisites:
-- Node.js >= 18
-- [Voyage API Key](https://www.voyageai.com/)
-- Windows: WSL Ubuntu (`wsl --install -d Ubuntu`)
+> **Requirements:** Node.js >= 18. Windows users need [WSL](https://learn.microsoft.com/en-us/windows/wsl/install).
 
-The installer automatically detects your platform, installs Rust if needed, and builds the binary (~5 minutes first time). On Windows, the build happens inside WSL Ubuntu.
-
-### From Source
+### 2. Initialize
 
 ```bash
-git clone https://github.com/YOUR_USER/lumina.git
-cd lumina
-npm install
+cd your-project
+lumina init
 ```
+
+This will:
+- Ask you to pick an embedding provider (Local is free, no API key needed)
+- Index your codebase
+- Install Claude Code slash commands
+- Configure the MCP server
+
+### 3. Use in Claude Code
+
+Restart Claude Code, then use the slash commands:
+
+```
+/lumina-search authentication middleware
+/lumina-search database connection pooling
+/lumina-search how are errors handled
+```
+
+That's it! Lumina is ready.
 
 ---
 
-## CLI Tutorial
+## Slash Commands
 
-Lumina has 4 commands:
+After running `lumina init`, these commands are available inside Claude Code:
 
-### `lumina index`
+| Command | What it does |
+|---------|-------------|
+| `/lumina-search <query>` | Search your code semantically |
+| `/lumina-index` | Re-index (only changed files) |
+| `/lumina-status` | Show index stats |
+| `/lumina-help` | Show help |
 
-Index a repository for semantic search.
+### Examples
 
-```bash
-export VOYAGE_API_KEY="pa-your-key"
-lumina index --repo /path/to/your/project
-
-# Force full re-index (ignore cache)
-lumina index --repo /path/to/project --force
+```
+/lumina-search JWT token validation
+/lumina-search how does the payment flow work
+/lumina-search WebSocket connection handling
+/lumina-search where are environment variables loaded
 ```
 
-What it does:
-- Walks your repo (respects `.gitignore`)
-- Parses code with tree-sitter (6 languages supported)
-- Chunks functions, classes, methods
-- Embeds chunks via Voyage API
-- Stores vectors in LanceDB + keywords in Tantivy
-- Only re-indexes changed files (SHA-256 caching)
-
-### `lumina query`
-
-Search your codebase from the command line.
-
-```bash
-lumina query "authentication middleware" --repo /path/to/project
-
-# Limit results
-lumina query "database connection" -k 10 --repo /path/to/project
-```
-
-Returns markdown-formatted code snippets with file paths and line numbers.
-
-### `lumina mcp`
-
-Start the MCP server for Claude Code integration.
-
-```bash
-lumina mcp --repo /path/to/project
-```
-
-This runs a JSON-RPC 2.0 server over stdio. You don't call this directly — Claude Code calls it when configured in `.claude.json`.
-
-### `lumina status`
-
-Check index statistics.
-
-```bash
-lumina status --repo /path/to/project
-```
-
-Shows:
-- Number of tracked files
-- Number of indexed chunks
-- Vector/keyword store sizes
-- API key status
+Lumina understands **meaning**, not just keywords. Searching for "authentication" finds `verify_token()`, `login_handler()`, and `JwtMiddleware` — even if the word "authentication" never appears in the code.
 
 ---
 
-## Claude Code Integration
+## MCP Server (Claude Desktop)
 
-1. Index your project first:
+Lumina also works as an MCP server, giving Claude direct access to search tools.
 
-```bash
-export VOYAGE_API_KEY="pa-your-key"
-lumina index --repo /path/to/your/project
-```
+### Automatic setup (via `lumina init`)
 
-2. Create `.claude.json` in your project root:
+Running `lumina init` creates a `.mcp.json` file in your project. Claude Code picks this up automatically.
+
+### Manual setup (Claude Desktop)
+
+Add to your `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "lumina": {
       "command": "lumina",
-      "args": ["mcp", "--repo", "/path/to/your/project"],
-      "env": {
-        "VOYAGE_API_KEY": "pa-your-key"
-      }
+      "args": ["mcp", "--repo", "/path/to/your/project"]
     }
   }
 }
 ```
 
-Windows users: use `wsl` as command and WSL paths:
+**Config file locations:**
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
 
-```json
-{
-  "mcpServers": {
-    "lumina": {
-      "command": "wsl",
-      "args": ["-e", "lumina", "mcp", "--repo", "/mnt/c/path/to/project"],
-      "env": {
-        "VOYAGE_API_KEY": "pa-your-key"
-      }
-    }
-  }
-}
-```
+### MCP Tools
 
-3. Restart Claude Code
+When connected, Claude gets these tools automatically:
 
-4. Ask Claude to search:
-
-```
-You: "Find the authentication middleware"
-```
-
-Claude will use `semantic_search` instead of reading files
+| Tool | Description |
+|------|-------------|
+| `semantic_search` | Natural language code search |
+| `find_symbol` | Find functions/classes by name |
+| `get_file_span` | Read specific lines from a file |
+| `list_indexed_files` | List all indexed files |
 
 ---
 
-## MCP Tools
+## CLI Reference
 
-Lumina provides 4 tools to Claude Code:
+### `lumina init`
 
-### `semantic_search`
+Set up everything in one command.
 
-Natural language code search (hybrid vector + BM25).
-
-**Input:**
-- `query` (string): Natural language query (e.g., "JWT token validation")
-- `k` (int, optional): Number of results (default: 5, max: 20)
-
-**Output:** Markdown with code snippets, file paths, line numbers.
-
-**Example:**
-```json
-{
-  "name": "semantic_search",
-  "arguments": {
-    "query": "database connection pooling",
-    "k": 5
-  }
-}
+```bash
+lumina init                          # Interactive setup
+lumina init --provider local         # Skip provider selection
+lumina init --skip-index             # Only install Claude integration
+lumina init --skip-commands          # Don't install slash commands
+lumina init --skip-mcp               # Don't create .mcp.json
 ```
 
-### `find_symbol`
+### `lumina index`
 
-Find symbols (functions, classes, structs) by name. Supports fuzzy matching.
+Index or re-index your codebase.
 
-**Input:**
-- `name` (string): Symbol name (e.g., "UserService", "authenticate")
-- `limit` (int, optional): Max results (default: 10)
+```bash
+lumina index --repo .                # Index current directory
+lumina index --repo . --force        # Full re-index (delete cache)
+lumina index --repo . --provider openai  # Use OpenAI embeddings
+```
 
-**Output:** List of matching symbols with full code.
+### `lumina query`
 
-### `get_file_span`
+Search from the command line.
 
-Read a specific range of lines from a file.
+```bash
+lumina query "authentication middleware" --repo .
+lumina query "database connection" --repo . -k 10
+```
 
-**Input:**
-- `file` (string): File path relative to repo root
-- `start_line` (int): First line (1-indexed)
-- `end_line` (int): Last line (1-indexed, inclusive)
+### `lumina status`
 
-**Output:** Code snippet with syntax highlighting.
+Check index health.
 
-### `list_indexed_files`
+```bash
+lumina status --repo .
+```
 
-List all files in the index.
+### `lumina mcp`
 
-**Output:** List of indexed file paths.
+Start the MCP server (used by Claude, not called directly).
+
+```bash
+lumina mcp --repo .
+```
+
+---
+
+## Embedding Providers
+
+Lumina supports 3 embedding providers. Choose during `lumina init`:
+
+| Provider | Cost | Quality | Setup |
+|----------|------|---------|-------|
+| **Local** (default) | Free | Good | Nothing needed |
+| **Voyage AI** | API key | Best for code | `export VOYAGE_API_KEY=your-key` |
+| **OpenAI** | API key | Good | `export OPENAI_API_KEY=your-key` |
+
+### Local (recommended for getting started)
+
+Uses [fastembed](https://github.com/Anush008/fastembed-rs) with the `jina-embeddings-v2-base-code` model. Runs entirely on your machine. Downloads the model (~120MB) on first use.
+
+### Voyage AI (recommended for production)
+
+Best quality for code search. Get an API key at [voyageai.com](https://www.voyageai.com/).
+
+```bash
+export VOYAGE_API_KEY="pa-your-key"
+lumina init --provider voyage
+```
+
+### OpenAI
+
+Uses `text-embedding-3-small`. Get an API key at [platform.openai.com](https://platform.openai.com/).
+
+```bash
+export OPENAI_API_KEY="sk-your-key"
+lumina init --provider openai
+```
+
+---
+
+## Supported Languages
+
+| Language | Extensions |
+|----------|-----------|
+| Python | `.py` |
+| Rust | `.rs` |
+| TypeScript | `.ts`, `.tsx` |
+| JavaScript | `.js`, `.jsx` |
+| Go | `.go` |
+| Java | `.java` |
+
+Lumina uses [tree-sitter](https://tree-sitter.github.io/) for AST-aware code parsing. It understands functions, classes, methods, and structs — not just lines of text.
+
+---
+
+## How It Works
+
+```
+                    lumina init
+                        |
+        +---------------+---------------+
+        |                               |
+   Index codebase              Install integration
+        |                        |            |
+   +---------+            Slash commands  .mcp.json
+   |         |            (.claude/skills/)
+Parse code  Embed
+(tree-sitter) (vectors)
+   |         |
+   +----+----+
+        |
+  Store in dual index
+  |              |
+LanceDB       Tantivy
+(vectors)     (keywords)
+
+                lumina query "auth"
+                        |
+        +---------------+---------------+
+        |                               |
+  Vector search (LanceDB)    Keyword search (Tantivy)
+  "semantic similarity"       "exact term matching"
+        |                               |
+        +---------------+---------------+
+                        |
+                  RRF Fusion
+              (merge & rank results)
+                        |
+                  Top-k results
+```
+
+**Hybrid retrieval** combines the best of both worlds:
+- Vector search finds `verify_token()` when you search "authentication"
+- Keyword search finds `UserService` when you search "userservice"
+- RRF fusion merges both result sets into one ranked list
 
 ---
 
 ## Configuration
 
-Lumina uses `.lumina/config.toml` (optional). Defaults are shown below:
+Lumina stores its config in `.lumina/config.toml`:
 
 ```toml
-voyage_model = "voyage-code-3"
+embedding_provider = "local"
+embedding_model = "jinaai/jina-embeddings-v2-base-code"
+embedding_dimensions = 768
 embedding_batch_size = 128
 
 max_chunk_tokens = 500
 min_chunk_tokens = 50
-max_file_size = 1048576  # 1 MB
+max_file_size = 1048576
 
 search_k_vector = 30
 search_k_keyword = 30
@@ -309,114 +280,75 @@ rrf_k = 60
 response_token_budget = 2000
 ```
 
-**Environment variables override config:**
-- `VOYAGE_API_KEY` — Required for embeddings
-
----
-
-## Design Decisions
-
-### Why Synchronous (Not Async)?
-
-- **MCP server is synchronous** — stdio loop, one request at a time
-- **Only LanceDB needs async** — wrapped with `tokio::runtime::block_on()`
-- **Embeddings use `reqwest::blocking`** — simpler, no async spread
-- Result: ~200 lines less code, easier to reason about
-
-### Why Two Stores (LanceDB + Tantivy)?
-
-**Vector search alone is insufficient** for code:
-- Misses exact identifier matches ("UserService" query won't match "user_service")
-- No BM25 term frequency signals
-
-**Keyword search alone is insufficient:**
-- Can't understand "authentication logic" → `verify_token()`
-- No semantic similarity
-
-**Solution:** Hybrid retrieval with RRF fusion (best of both worlds).
-
-### Why Tree-Sitter (Not Regex)?
-
-- **AST-aware chunking** — respects code structure (functions, classes)
-- **Language-agnostic** — same pipeline for Python, Rust, TypeScript, etc.
-- **Accurate boundaries** — no splitting mid-function
-
-### Why SHA-256 Caching?
-
-Two-level caching:
-1. **File-level:** Skip parsing unchanged files
-2. **Chunk-level:** Chunk ID = SHA-256 of text (content-addressable, dedup)
-
-Result: Incremental indexing is **~50x faster** than full re-index.
-
----
-
-## Performance
-
-**Indexing speed:** ~3000 files/minute on 8-core CPU (tree-sitter parsing is CPU-bound)
-
-**Search latency:**
-- Vector search: ~10ms (LanceDB ANN)
-- Keyword search: ~5ms (Tantivy BM25)
-- RRF fusion: ~1ms
-- **Total:** ~20ms (excluding embedding API call)
-
-**Memory usage:** ~80-100MB peak during indexing (streaming pipeline)
-
----
-
-## Supported Languages
-
-| Language | Extensions | Tree-sitter Grammar |
-|----------|-----------|---------------------|
-| Python | `.py` | `tree-sitter-python` |
-| Rust | `.rs` | `tree-sitter-rust` |
-| TypeScript | `.ts`, `.tsx` | `tree-sitter-typescript` |
-| JavaScript | `.js`, `.jsx` | `tree-sitter-javascript` |
-| Go | `.go` | `tree-sitter-go` |
-| Java | `.java` | `tree-sitter-java` |
-
-**Adding more languages:** Add grammar to `Cargo.toml` + query to `chunker/languages.rs`.
+Most defaults work well. The main thing you might change is `response_token_budget` (how much code Claude gets per search).
 
 ---
 
 ## Troubleshooting
 
-### `rustc ICE` errors during build
+### "No index found"
 
-**Cause:** Rustc 1.94.0 has a bug in the dead code linter when emitting diagnostics for files on Windows filesystem.
+Run `lumina init` or `lumina index --repo .` first.
 
-**Workaround:** Project uses `#![allow(warnings)]` in `lib.rs` and `#![allow(dead_code)]` in `store/tantivy_store.rs`.
+### "Provider mismatch"
 
-### `No VOYAGE_API_KEY set`
+You changed your embedding provider after indexing. Run:
 
-Lumina will fall back to `MockEmbedder` (random embeddings). Set `VOYAGE_API_KEY` environment variable.
+```bash
+lumina index --repo . --force
+```
 
-### `Index not found`
+This rebuilds the entire index with the new provider.
 
-Run `lumina index --repo .` first to create the index.
+### Slash commands not showing up
 
-### MCP server not appearing in Claude Code
-
-1. Check `.claude.json` syntax (valid JSON)
+1. Make sure `.claude/skills/` directory exists in your project
 2. Restart Claude Code
-3. Check Claude Code logs: `~/.claude/logs/`
+3. Type `/lumina` and check if commands appear in autocomplete
+
+### MCP server not connecting
+
+1. Check `.mcp.json` exists in your project root
+2. Make sure `lumina` is in your PATH: `which lumina` or `where lumina`
+3. Restart Claude Code
+
+### Windows: "lumina not found"
+
+Lumina on Windows runs through WSL. Make sure:
+
+1. WSL is installed: `wsl --version`
+2. Ubuntu is installed: `wsl --list`
+
+### Build errors during install
+
+If the pre-built binary isn't available for your platform:
+
+```bash
+# Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Rebuild
+npm rebuild lumina-search
+```
 
 ---
 
-## Roadmap (Future Work)
+## FAQ
 
-**Phase 2: Symbol Dependency Graph**
-- Tree-sitter → call graph
-- Answer "what breaks if I change this function?"
+**Q: Does Lumina send my code to the cloud?**
+A: Only if you choose Voyage AI or OpenAI as your embedding provider. With **Local** mode, everything stays on your machine.
 
-**Phase 3: Cross-repo shared index**
-- Multiple repos → single index
-- Answer "how do other projects use this API?"
+**Q: How big is the index?**
+A: Roughly 1-5 MB per 1000 files, depending on code density.
 
-**Phase 4: Agent trace dataset**
-- Log Claude's searches
-- Fine-tune embeddings on agent queries
+**Q: Can I use Lumina with Claude Desktop (not just Claude Code)?**
+A: Yes! Set up the MCP server in `claude_desktop_config.json`. See the [MCP Server](#mcp-server-claude-desktop) section.
+
+**Q: What happens when I change files?**
+A: Run `/lumina-index` or `lumina index --repo .`. Only changed files are re-processed (SHA-256 caching).
+
+**Q: Can I use it with other AI tools?**
+A: Lumina implements the standard [MCP protocol](https://modelcontextprotocol.io/), so any MCP-compatible tool can connect to it.
 
 ---
 
@@ -428,9 +360,4 @@ Apache 2.0
 
 ## Credits
 
-Built with:
-- [tree-sitter](https://tree-sitter.github.io/) — AST parsing
-- [LanceDB](https://lancedb.com/) — Vector storage
-- [Tantivy](https://github.com/quickwit-oss/tantivy) — Full-text search
-- [Voyage AI](https://www.voyageai.com/) — Code embeddings
-- [MCP](https://modelcontextprotocol.io/) — Model Context Protocol
+Built with [tree-sitter](https://tree-sitter.github.io/), [LanceDB](https://lancedb.com/), [Tantivy](https://github.com/quickwit-oss/tantivy), [fastembed](https://github.com/Anush008/fastembed-rs), [Voyage AI](https://www.voyageai.com/), and the [Model Context Protocol](https://modelcontextprotocol.io/).

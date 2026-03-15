@@ -60,6 +60,29 @@ enum Commands {
         #[arg(long, default_value = ".")]
         repo: PathBuf,
     },
+
+    /// Initialize Lumina: index repo + install Claude Code integration
+    Init {
+        /// Path to the repository root (default: current directory)
+        #[arg(long, default_value = ".")]
+        repo: PathBuf,
+
+        /// Embedding provider: local, voyage, openai
+        #[arg(long, value_parser = parse_provider)]
+        provider: Option<EmbeddingProvider>,
+
+        /// Skip indexing (only install Claude Code integration)
+        #[arg(long)]
+        skip_index: bool,
+
+        /// Skip installing Claude Code slash commands
+        #[arg(long)]
+        skip_commands: bool,
+
+        /// Skip creating .mcp.json MCP server configuration
+        #[arg(long)]
+        skip_mcp: bool,
+    },
 }
 
 fn parse_provider(s: &str) -> std::result::Result<EmbeddingProvider, String> {
@@ -359,6 +382,41 @@ fn main() -> Result<()> {
                     }
                 }
             );
+        }
+
+        Commands::Init { repo, provider, skip_index, skip_commands, skip_mcp } => {
+            print_banner();
+            let repo = std::fs::canonicalize(&repo)?;
+            let mut config = lumina::config::LuminaConfig::load(repo.clone())?;
+
+            // Provider selection
+            ensure_provider(&mut config, provider)?;
+            std::fs::create_dir_all(&config.data_dir)?;
+            config.save().map_err(|e| anyhow::anyhow!("{}", e))?;
+
+            // Index (unless skipped)
+            if !skip_index {
+                eprintln!(
+                    "\n  {} using {} ({})",
+                    "Indexing".cyan(),
+                    config.embedding_provider.display_name().white().bold(),
+                    config.embedding_model.yellow()
+                );
+                let mut indexer = lumina::create_indexer(&config)?;
+                let stats = indexer.index()?;
+                save_provider_lock(&config)?;
+                eprintln!("{}", stats);
+            }
+
+            // Install Claude Code integration
+            lumina::init::install_claude_integration(
+                &repo,
+                skip_commands,
+                skip_mcp,
+            )?;
+
+            // Welcome message
+            lumina::init::print_welcome(&config, skip_commands, skip_mcp);
         }
     }
 
