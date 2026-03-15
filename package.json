@@ -5,10 +5,10 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/JoseZum/lumina"
+    "url": "git+https://github.com/JoseZum/lumina.git"
   },
   "bin": {
-    "lumina": "./bin/lumina.js"
+    "lumina": "bin/lumina.js"
   },
   "scripts": {
     "postinstall": "node scripts/postinstall.js"
