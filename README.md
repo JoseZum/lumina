@@ -100,24 +100,16 @@ Claude Code spends **80% of context window tokens on exploration** — reading f
 
 ## Installation
 
-### npm Install (Recommended)
-
 ```bash
 npm install -g lumina-search
 ```
 
-This automatically:
-- Detects your platform (Linux, macOS, Windows)
-- Installs Rust if needed
-- Builds the binary (~5 minutes first time)
-- On Windows, builds inside WSL Ubuntu automatically
-
-**Prerequisites:**
+Prerequisites:
 - Node.js >= 18
 - [Voyage API Key](https://www.voyageai.com/)
-- Windows only: WSL Ubuntu (`wsl --install -d Ubuntu`)
+- Windows: WSL Ubuntu (`wsl --install -d Ubuntu`)
 
-After install, the `lumina` command is available globally.
+The installer automatically detects your platform, installs Rust if needed, and builds the binary (~5 minutes first time). On Windows, the build happens inside WSL Ubuntu.
 
 ### From Source
 
@@ -127,108 +119,61 @@ cd lumina
 npm install
 ```
 
-### Manual Install (no npm)
-
-<details>
-<summary>Click to expand</summary>
-
-#### Windows (PowerShell)
-
-```powershell
-.\install.ps1
-```
-
-#### Linux/macOS or WSL
-
-```bash
-bash install.sh
-exec bash
-lumina --version
-```
-
-</details>
-
 ---
 
-## Usage
+## CLI Tutorial
 
-### 1. Index a Repository
+Lumina has 4 commands:
 
-```bash
-# In WSL (after installation)
-export VOYAGE_API_KEY="pa-your-key-here"
-lumina index --repo /mnt/c/path/to/your/project
+### `lumina index`
 
-# Or from Windows PowerShell
-wsl -e bash -c 'export VOYAGE_API_KEY=pa-xxx && lumina index --repo /mnt/c/path/to/project'
-```
-
-**What happens:**
-- Walks the repo (respects `.gitignore`)
-- Parses supported files: `.py`, `.rs`, `.ts`, `.tsx`, `.js`, `.jsx`, `.go`, `.java`
-- Chunks code using tree-sitter (AST-aware)
-- Embeds chunks via Voyage API (batches of 128)
-- Stores in `.lumina/` directory
-
-**Incremental indexing:** On subsequent runs, only changed files are re-indexed (SHA-256 hash check).
-
-**Force full re-index:**
-```bash
-lumina index --repo /path/to/repo --force
-```
-
-### 2. Query from CLI
+Index a repository for semantic search.
 
 ```bash
-# In WSL
 export VOYAGE_API_KEY="pa-your-key"
-lumina query "authentication middleware" -k 5 --repo /mnt/c/path/to/project
+lumina index --repo /path/to/your/project
 
-# From Windows
-wsl -e bash -c 'export VOYAGE_API_KEY=pa-xxx && lumina query "authentication" --repo /mnt/c/path/to/project'
+# Force full re-index (ignore cache)
+lumina index --repo /path/to/project --force
 ```
 
-Returns markdown-formatted results with code snippets.
+What it does:
+- Walks your repo (respects `.gitignore`)
+- Parses code with tree-sitter (6 languages supported)
+- Chunks functions, classes, methods
+- Embeds chunks via Voyage API
+- Stores vectors in LanceDB + keywords in Tantivy
+- Only re-indexes changed files (SHA-256 caching)
 
-### 3. Use with Claude Code
+### `lumina query`
 
-#### a. Create `.claude.json` in your project root:
-
-```json
-{
-  "mcpServers": {
-    "lumina": {
-      "command": "wsl",
-      "args": ["-e", "lumina", "mcp", "--repo", "/mnt/c/path/to/your/project"],
-      "env": {
-        "VOYAGE_API_KEY": "pa-your-key-here"
-      }
-    }
-  }
-}
-```
-
-**Important:**
-- Replace `/mnt/c/path/to/your/project` with the WSL path to your repo
-- Replace `pa-your-key-here` with your actual Voyage API key
-- First run `lumina index --repo /mnt/c/path/to/your/project` to create the index
-
-#### b. Restart Claude Code
-
-Claude Code will now show "lumina" in its available MCP tools.
-
-#### c. Ask Claude to search
-
-```
-You: "Find the authentication middleware"
-```
-
-Claude will automatically use `semantic_search` instead of reading files!
-
-### 4. Check Index Status
+Search your codebase from the command line.
 
 ```bash
-lumina status --repo /path/to/repo
+lumina query "authentication middleware" --repo /path/to/project
+
+# Limit results
+lumina query "database connection" -k 10 --repo /path/to/project
+```
+
+Returns markdown-formatted code snippets with file paths and line numbers.
+
+### `lumina mcp`
+
+Start the MCP server for Claude Code integration.
+
+```bash
+lumina mcp --repo /path/to/project
+```
+
+This runs a JSON-RPC 2.0 server over stdio. You don't call this directly — Claude Code calls it when configured in `.claude.json`.
+
+### `lumina status`
+
+Check index statistics.
+
+```bash
+lumina status --repo /path/to/project
 ```
 
 Shows:
@@ -236,6 +181,59 @@ Shows:
 - Number of indexed chunks
 - Vector/keyword store sizes
 - API key status
+
+---
+
+## Claude Code Integration
+
+1. Index your project first:
+
+```bash
+export VOYAGE_API_KEY="pa-your-key"
+lumina index --repo /path/to/your/project
+```
+
+2. Create `.claude.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "lumina": {
+      "command": "lumina",
+      "args": ["mcp", "--repo", "/path/to/your/project"],
+      "env": {
+        "VOYAGE_API_KEY": "pa-your-key"
+      }
+    }
+  }
+}
+```
+
+Windows users: use `wsl` as command and WSL paths:
+
+```json
+{
+  "mcpServers": {
+    "lumina": {
+      "command": "wsl",
+      "args": ["-e", "lumina", "mcp", "--repo", "/mnt/c/path/to/project"],
+      "env": {
+        "VOYAGE_API_KEY": "pa-your-key"
+      }
+    }
+  }
+}
+```
+
+3. Restart Claude Code
+
+4. Ask Claude to search:
+
+```
+You: "Find the authentication middleware"
+```
+
+Claude will use `semantic_search` instead of reading files
 
 ---
 

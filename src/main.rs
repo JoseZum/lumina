@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use colored::Colorize;
 use lumina::store::{KeywordStore, VectorStore};
 use std::path::PathBuf;
 
@@ -54,6 +55,17 @@ enum Commands {
     },
 }
 
+fn print_banner() {
+    let logo = r#"
+▄▄
+██                ▀▀
+██ ██ ██ ███▄███▄ ██  ████▄  ▀▀█▄
+██ ██ ██ ██ ██ ██ ██  ██ ██ ▄█▀██
+██ ▀██▀█ ██ ██ ██ ██▄ ██ ██ ▀█▄██
+"#;
+    eprintln!("{}", logo.truecolor(64, 224, 208)); // Turquoise
+}
+
 fn main() -> Result<()> {
     // Initialize tracing to stderr (stdout reserved for MCP)
     tracing_subscriber::fmt()
@@ -68,6 +80,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Index { repo, force } => {
+            print_banner();
             let repo = std::fs::canonicalize(&repo)?;
             let config = lumina::config::LuminaConfig::load(repo)?;
 
@@ -76,32 +89,36 @@ fn main() -> Result<()> {
                 let hashes_path = config.hashes_path();
                 if hashes_path.exists() {
                     std::fs::remove_file(&hashes_path)?;
-                    eprintln!("Cleared hash cache for full re-index.");
+                    eprintln!("{}", "Cleared hash cache for full re-index".yellow());
                 }
             }
 
             // Ensure data directory exists
             std::fs::create_dir_all(&config.data_dir)?;
 
+            eprintln!("{}", "Indexing repository...".cyan());
             let mut indexer = lumina::create_indexer(&config)?;
             let stats = indexer.index()?;
+            eprintln!("\n{}", "Done!".green().bold());
             eprintln!("{}", stats);
         }
 
         Commands::Query { query, k, repo } => {
+            print_banner();
             let repo = std::fs::canonicalize(&repo)?;
             let config = lumina::config::LuminaConfig::load(repo)?;
 
             if !config.data_dir.exists() {
-                anyhow::bail!(
-                    "No index found at {}. Run `lumina index` first.",
-                    config.data_dir.display()
-                );
+                eprintln!("{}", "Error: No index found.".red().bold());
+                eprintln!("Run {} first.", "lumina index".yellow());
+                anyhow::bail!("Index not found");
             }
 
+            eprintln!("{} {}", "Searching:".cyan(), query.white().bold());
             let engine = lumina::create_search_engine(&config)?;
             let results = engine.semantic_search(&query, k)?;
             let formatted = engine.format_results(&query, &results, config.response_token_budget);
+            eprintln!("{} {} results\n", "Found".green(), results.len());
             println!("{}", formatted);
         }
 
@@ -118,12 +135,13 @@ fn main() -> Result<()> {
         }
 
         Commands::Status { repo } => {
+            print_banner();
             let repo = std::fs::canonicalize(&repo)?;
             let config = lumina::config::LuminaConfig::load(repo)?;
 
             if !config.data_dir.exists() {
-                eprintln!("No index found at {}.", config.data_dir.display());
-                eprintln!("Run `lumina index` to create one.");
+                eprintln!("{}", "No index found.".red().bold());
+                eprintln!("Run {} to create one.", "lumina index".yellow());
                 return Ok(());
             }
 
@@ -135,18 +153,19 @@ fn main() -> Result<()> {
 
             let hasher = lumina::indexer::hasher::FileHasher::new(config.hashes_path())?;
 
-            eprintln!("Lumina Index Status");
-            eprintln!("  Data directory: {}", config.data_dir.display());
-            eprintln!("  Tracked files: {}", hasher.tracked_count());
-            eprintln!("  Vector store chunks: {}", vector_count);
-            eprintln!("  Keyword store chunks: {}", keyword_count);
-            eprintln!("  Embedding model: {}", config.voyage_model);
+            eprintln!("{}", "Index Status".truecolor(64, 224, 208).bold());
+            eprintln!("  {}: {}", "Data directory".cyan(), config.data_dir.display());
+            eprintln!("  {}: {}", "Tracked files".cyan(), hasher.tracked_count());
+            eprintln!("  {}: {}", "Vector chunks".cyan(), vector_count);
+            eprintln!("  {}: {}", "Keyword chunks".cyan(), keyword_count);
+            eprintln!("  {}: {}", "Embedding model".cyan(), config.voyage_model);
             eprintln!(
-                "  API key: {}",
+                "  {}: {}",
+                "API key".cyan(),
                 if config.voyage_api_key.is_some() {
-                    "configured"
+                    "configured".green().to_string()
                 } else {
-                    "NOT SET (set VOYAGE_API_KEY)"
+                    "NOT SET (set VOYAGE_API_KEY)".red().to_string()
                 }
             );
         }
