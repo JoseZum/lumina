@@ -79,6 +79,7 @@ impl SearchEngine {
     }
 
     /// Read a span of lines from a file on disk.
+    /// The file path must resolve to a location inside repo_root.
     pub fn get_file_span(
         &self,
         file: &str,
@@ -87,14 +88,27 @@ impl SearchEngine {
     ) -> Result<String> {
         let full_path = self.config.repo_root.join(file);
 
-        if !full_path.exists() {
+        // Canonicalize to resolve .., symlinks, etc. and verify it's inside repo_root
+        let canonical = full_path.canonicalize().map_err(|_| {
+            LuminaError::FileNotFound(full_path.clone())
+        })?;
+        let canonical_root = self.config.repo_root.canonicalize().map_err(|_| {
+            LuminaError::FileNotFound(self.config.repo_root.clone())
+        })?;
+
+        if !canonical.starts_with(&canonical_root) {
             return Err(LuminaError::FileNotFound(full_path));
         }
 
-        let content = std::fs::read_to_string(&full_path)?;
+        // Validate line range
+        if start_line == 0 || end_line == 0 || start_line > end_line {
+            return Ok(String::new());
+        }
+
+        let content = std::fs::read_to_string(&canonical)?;
         let lines: Vec<&str> = content.lines().collect();
 
-        let start = (start_line.saturating_sub(1)) as usize;
+        let start = (start_line - 1) as usize;
         let end = (end_line as usize).min(lines.len());
 
         if start >= lines.len() {

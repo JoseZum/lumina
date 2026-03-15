@@ -14,9 +14,10 @@ pub trait VectorStore: Send + Sync {
 
     /// Search with a file path prefix filter. Default: search then filter.
     fn search_filtered(&self, embedding: &[f32], limit: usize, file_prefix: &str) -> Result<Vec<SearchResult>> {
+        let dir_prefix = format!("{}/", file_prefix);
         let results = self.search(embedding, limit * 5)?;
         Ok(results.into_iter()
-            .filter(|r| r.file.starts_with(file_prefix) || r.file.starts_with(&format!("{}/", file_prefix)))
+            .filter(|r| r.file == file_prefix || r.file.starts_with(&dir_prefix))
             .take(limit)
             .collect())
     }
@@ -38,9 +39,10 @@ pub trait KeywordStore: Send + Sync {
 
     /// Keyword search with a file path prefix filter. Default: search then filter.
     fn search_filtered(&self, query: &str, limit: usize, file_prefix: &str) -> Result<Vec<SearchResult>> {
+        let dir_prefix = format!("{}/", file_prefix);
         let results = self.search(query, limit * 5)?;
         Ok(results.into_iter()
-            .filter(|r| r.file.starts_with(file_prefix) || r.file.starts_with(&format!("{}/", file_prefix)))
+            .filter(|r| r.file == file_prefix || r.file.starts_with(&dir_prefix))
             .take(limit)
             .collect())
     }

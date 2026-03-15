@@ -2,7 +2,7 @@
 
 use std::path::Path;
 use tantivy::collector::TopDocs;
-use tantivy::query::{QueryParser, FuzzyTermQuery};
+use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, QueryParser, RegexQuery};
 use tantivy::schema::*;
 use tantivy::{doc, Index, IndexWriter, ReloadPolicy};
 
@@ -156,6 +156,60 @@ impl KeywordStore for TantivyStore {
 
         let top_docs = searcher
             .search(&parsed_query, &TopDocs::with_limit(limit))
+            .map_err(|e| LuminaError::KeywordStoreError(e.to_string()))?;
+
+        let mut results = Vec::new();
+        for (score, doc_address) in top_docs {
+            let doc: TantivyDocument = searcher
+                .doc(doc_address)
+                .map_err(|e| LuminaError::KeywordStoreError(e.to_string()))?;
+            results.push(self.extract_result(&doc, score));
+        }
+
+        Ok(results)
+    }
+
+    fn search_filtered(&self, query: &str, limit: usize, file_prefix: &str) -> Result<Vec<SearchResult>> {
+        let reader = self
+            .index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::OnCommitWithDelay)
+            .try_into()
+            .map_err(|e: tantivy::TantivyError| LuminaError::KeywordStoreError(e.to_string()))?;
+
+        let searcher = reader.searcher();
+        let query_parser = QueryParser::for_index(&self.index, vec![self.f_text, self.f_symbol]);
+        let text_query = query_parser
+            .parse_query(query)
+            .map_err(|e| LuminaError::KeywordStoreError(e.to_string()))?;
+
+        // Escape regex metacharacters in file prefix, then match prefix or prefix/
+        let escaped = file_prefix
+            .replace('\\', "\\\\")
+            .replace('.', "\\.")
+            .replace('+', "\\+")
+            .replace('*', "\\*")
+            .replace('?', "\\?")
+            .replace('(', "\\(")
+            .replace(')', "\\)")
+            .replace('[', "\\[")
+            .replace(']', "\\]")
+            .replace('{', "\\{")
+            .replace('}', "\\}")
+            .replace('^', "\\^")
+            .replace('$', "\\$")
+            .replace('|', "\\|");
+        let pattern = format!("{}(/.*)?$", escaped);
+        let file_query = RegexQuery::from_pattern(&pattern, self.f_file)
+            .map_err(|e| LuminaError::KeywordStoreError(e.to_string()))?;
+
+        let combined = BooleanQuery::new(vec![
+            (Occur::Must, text_query),
+            (Occur::Must, Box::new(file_query)),
+        ]);
+
+        let top_docs = searcher
+            .search(&combined, &TopDocs::with_limit(limit))
             .map_err(|e| LuminaError::KeywordStoreError(e.to_string()))?;
 
         let mut results = Vec::new();

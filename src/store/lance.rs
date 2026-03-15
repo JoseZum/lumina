@@ -343,7 +343,17 @@ impl VectorStore for LanceStore {
                 .await
                 .map_err(|e| LuminaError::VectorStoreError(e.to_string()))?;
 
-            let filter_expr = format!("file LIKE '{}%'", file_prefix.replace('\'', "''"));
+            // Escape SQL single-quotes and LIKE wildcards (%, _) with backslash
+            let escaped = file_prefix
+                .replace('\'', "''")
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            let filter_expr = format!(
+                "file LIKE '{}/%' OR file = '{}'",
+                escaped,
+                file_prefix.replace('\'', "''")
+            );
             let query = table
                 .vector_search(embedding)
                 .map_err(|e| LuminaError::VectorStoreError(e.to_string()))?;

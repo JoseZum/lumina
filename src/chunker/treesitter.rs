@@ -84,7 +84,12 @@ impl TreeSitterChunker {
                 embedding: None,
             });
 
-            i = if end >= lines.len() { end } else { end.saturating_sub(overlap_lines) };
+            // Guarantee forward progress: next start must be at least i + 1
+            i = if end >= lines.len() {
+                end
+            } else {
+                end.saturating_sub(overlap_lines).max(i + 1)
+            };
             part += 1;
         }
         chunks

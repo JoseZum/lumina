@@ -177,53 +177,70 @@ jobs:
           name: npm-darwin-x64
           path: npm/darwin-x64/
 
-      - name: List platform packages
+      # Verify every platform package contains a binary before publishing
+      - name: Verify platform package contents
         run: |
-          echo "=== Platform packages ==="
-          for dir in npm/*/; do
-            echo "--- $dir ---"
-            ls -lhR "$dir"
+          FAIL=0
+          for dir in win32-x64 darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            if [ ! -d "npm/$dir/bin" ] || [ -z "$(ls -A npm/$dir/bin/ 2>/dev/null)" ]; then
+              echo "FATAL: npm/$dir/bin/ is missing or empty"
+              FAIL=1
+            else
+              echo "OK: npm/$dir/bin/ →"
+              ls -lh "npm/$dir/bin/"
+            fi
           done
+          if [ "$FAIL" -eq 1 ]; then
+            echo "::error::One or more platform packages are missing binaries. Aborting publish."
+            exit 1
+          fi
 
-      # Publish each platform package
+      # Publish platform packages (fail the job if any publish fails)
       - name: Publish @lumina-search/win32-x64
         working-directory: npm/win32-x64
-        run: npm publish --access public || true
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @lumina-search/linux-x64
         working-directory: npm/linux-x64
-        run: npm publish --access public || true
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @lumina-search/linux-arm64
         working-directory: npm/linux-arm64
-        run: npm publish --access public || true
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @lumina-search/darwin-arm64
         working-directory: npm/darwin-arm64
-        run: npm publish --access public || true
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @lumina-search/darwin-x64
         working-directory: npm/darwin-x64
-        run: npm publish --access public || true
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # Publish the main package last
-      - name: Publish lumina-search
-        run: npm publish --access public || true
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      # ── Smoke test: install from npm ──
-      - name: Smoke test — npm install
+      # Pre-publish smoke test: install platform + main from local tarballs
+      # into a temp project so all resolution is fully offline (no registry hits)
+      - name: Pre-publish smoke test — local tarball install
         run: |
-          npm install -g lumina-search || true
-          lumina --version || echo "Binary not available for this CI platform (expected)"
+          PLATFORM_TGZ="/tmp/$(cd npm/linux-x64 && npm pack --pack-destination /tmp 2>/dev/null | tail -1)"
+          MAIN_TGZ="/tmp/$(npm pack --pack-destination /tmp 2>/dev/null | tail -1)"
+          SMOKE_DIR=$(mktemp -d)
+          cd "$SMOKE_DIR"
+          npm init -y > /dev/null 2>&1
+          npm install "$PLATFORM_TGZ" "$MAIN_TGZ"
+          npx lumina --version
+          rm -rf "$SMOKE_DIR"
+
+      # Publish the main package only after all platform packages succeeded
+      - name: Publish lumina-search
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
