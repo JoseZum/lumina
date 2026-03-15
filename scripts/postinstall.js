@@ -115,12 +115,123 @@ function buildFromSource() {
   }
 }
 
+// Build for Windows via WSL
+function buildWindows() {
+  const { spawnSync } = require("child_process");
+
+  // Check WSL
+  try {
+    execSync("wsl --version", { stdio: "ignore" });
+  } catch {
+    console.error("");
+    console.error("╔════════════════════════════════════════════════════════════╗");
+    console.error("║  Lumina requires WSL (Windows Subsystem for Linux)        ║");
+    console.error("╚════════════════════════════════════════════════════════════╝");
+    console.error("");
+    console.error("Install WSL with these steps:");
+    console.error("");
+    console.error("1. Open PowerShell as Administrator");
+    console.error("2. Run: wsl --install");
+    console.error("3. Restart your computer");
+    console.error("4. Run: npm install -g lumina-search");
+    console.error("");
+    console.error("For more info: https://learn.microsoft.com/en-us/windows/wsl/install");
+    console.error("");
+    process.exit(0);
+  }
+
+  // Check Ubuntu in WSL
+  const wslList = execSync("wsl --list --quiet", { encoding: "utf-8" });
+  if (!wslList.includes("Ubuntu")) {
+    console.error("");
+    console.error("╔════════════════════════════════════════════════════════════╗");
+    console.error("║  Lumina requires WSL Ubuntu to build on Windows           ║");
+    console.error("╚════════════════════════════════════════════════════════════╝");
+    console.error("");
+    console.error("Install WSL Ubuntu with these steps:");
+    console.error("");
+    console.error("1. Open PowerShell as Administrator");
+    console.error("2. Run: wsl --install -d Ubuntu");
+    console.error("3. Restart your computer");
+    console.error("4. Run: npm install -g lumina-search");
+    console.error("");
+    console.error("For more info: https://github.com/JoseZum/lumina#installation");
+    console.error("");
+    process.exit(0);
+  }
+
+  // Convert package path to WSL path
+  const resolved = path.resolve(PKG);
+  const drive = resolved.charAt(0).toLowerCase();
+  const rest = resolved.slice(2).replace(/\\/g, "/");
+  const wslPkg = `/mnt/${drive}${rest}`;
+
+  // Install dir on Linux filesystem
+  const installDir = "$HOME/.local/share/lumina";
+
+  const script = [
+    "set -e",
+    'source "$HOME/.cargo/env" 2>/dev/null || true',
+    "",
+    "# Install Rust if needed",
+    "if ! command -v cargo &>/dev/null; then",
+    '  echo "[lumina] Installing Rust..."',
+    "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y",
+    '  source "$HOME/.cargo/env"',
+    "fi",
+    "",
+    "# Install build tools if needed",
+    "if ! command -v gcc &>/dev/null; then",
+    '  echo "[lumina] Installing build tools..."',
+    "  sudo apt-get update && sudo apt-get install -y build-essential",
+    "fi",
+    "",
+    `# Copy to Linux filesystem`,
+    `INSTALL_DIR="${installDir}"`,
+    `rm -rf "$INSTALL_DIR"`,
+    `mkdir -p "$INSTALL_DIR"`,
+    `cp -r "${wslPkg}"/* "$INSTALL_DIR/"`,
+    "",
+    "# Fix CRLF line endings",
+    `find "$INSTALL_DIR" -name '*.rs' -exec sed -i 's/\\r$//' {} +`,
+    `find "$INSTALL_DIR" -name '*.toml' -exec sed -i 's/\\r$//' {} +`,
+    "",
+    "# Build",
+    'echo "[lumina] Building (this may take a few minutes)..."',
+    `cd "$INSTALL_DIR"`,
+    "cargo build --release",
+    "",
+    'echo "[lumina] Build complete!"',
+  ].join("\n");
+
+  const res = spawnSync("wsl", ["-d", "Ubuntu", "-e", "bash", "-c", script], {
+    stdio: "inherit",
+    timeout: 600000,
+  });
+
+  if (res.status !== 0) {
+    err("WSL build failed.");
+    err("Try manually: wsl -d Ubuntu bash -c 'cd ~/.local/share/lumina && cargo build --release'");
+    process.exit(1);
+  }
+
+  log("Done! Binary built in WSL.");
+  log("The lumina command will run via WSL automatically.");
+}
+
 async function main() {
   log(`Installing for ${platform}-${arch}...`);
 
   // Skip in CI
   if (process.env.CI) {
     log("CI detected — skipping binary installation");
+    return;
+  }
+
+  // Windows: Use WSL build for now (pre-built Windows binary coming soon)
+  if (platform === "win32") {
+    log("Windows detected — using WSL build...");
+    buildWindows();
     return;
   }
 
