@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 
-const { execSync } = require("child_process");
+/**
+ * Lumina postinstall script.
+ *
+ * Resolution order:
+ * 1. Platform npm package (@lumina-search/<platform>) already has the binary → done.
+ * 2. Download pre-built binary from GitHub Releases → done.
+ * 3. Fail with a clear message (never build from source, never use WSL).
+ */
+
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
@@ -8,8 +16,41 @@ const os = require("os");
 
 const PKG = path.resolve(__dirname, "..");
 const BIN_DIR = path.join(PKG, "bin");
-const platform = os.platform();
-const arch = os.arch();
+
+// ── Platform mapping ──
+
+const PLATFORMS = {
+  "win32-x64": {
+    pkg: "@lumina-search/win32-x64",
+    bin: "bin/lumina.exe",
+    artifact: "lumina-windows.exe",
+    localBin: "lumina-bin.exe",
+  },
+  "darwin-arm64": {
+    pkg: "@lumina-search/darwin-arm64",
+    bin: "bin/lumina",
+    artifact: "lumina-macos-arm64",
+    localBin: "lumina-bin",
+  },
+  "darwin-x64": {
+    pkg: "@lumina-search/darwin-x64",
+    bin: "bin/lumina",
+    artifact: "lumina-macos-x64",
+    localBin: "lumina-bin",
+  },
+  "linux-x64": {
+    pkg: "@lumina-search/linux-x64",
+    bin: "bin/lumina",
+    artifact: "lumina-linux-x64",
+    localBin: "lumina-bin",
+  },
+  "linux-arm64": {
+    pkg: "@lumina-search/linux-arm64",
+    bin: "bin/lumina",
+    artifact: "lumina-linux-arm64",
+    localBin: "lumina-bin",
+  },
+};
 
 function log(msg) {
   console.log(`[lumina] ${msg}`);
@@ -19,208 +60,70 @@ function err(msg) {
   console.error(`[lumina] ${msg}`);
 }
 
-// Detect platform and binary name
-function getPlatformInfo() {
-  let platformName, binaryName;
+// ── Check if platform package already has the binary ──
 
-  if (platform === "win32") {
-    platformName = "windows";
-    binaryName = "lumina.exe";
-  } else if (platform === "darwin") {
-    platformName = arch === "arm64" ? "macos-arm64" : "macos-x64";
-    binaryName = "lumina";
-  } else if (platform === "linux") {
-    platformName = "linux-x64";
-    binaryName = "lumina";
-  } else {
-    return null;
+function hasPlatformBinary(info) {
+  try {
+    const pkgDir = path.dirname(require.resolve(`${info.pkg}/package.json`));
+    const binPath = path.join(pkgDir, info.bin);
+    return fs.existsSync(binPath);
+  } catch {
+    return false;
   }
-
-  return { platformName, binaryName };
 }
 
-// Download file with progress
-function downloadFile(url, dest) {
-  return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(dest);
+// ── Download with redirect following ──
 
-    https.get(url, (response) => {
+function downloadFile(url, dest, maxRedirects = 5) {
+  return new Promise((resolve, reject) => {
+    if (maxRedirects <= 0) {
+      return reject(new Error("Too many redirects"));
+    }
+
+    const proto = url.startsWith("https") ? https : require("http");
+    proto.get(url, (response) => {
       if (response.statusCode === 302 || response.statusCode === 301) {
-        // Follow redirect
-        return downloadFile(response.headers.location, dest).then(resolve).catch(reject);
+        return downloadFile(response.headers.location, dest, maxRedirects - 1)
+          .then(resolve)
+          .catch(reject);
       }
 
       if (response.statusCode !== 200) {
-        reject(new Error(`Failed to download: ${response.statusCode}`));
-        return;
+        return reject(new Error(`HTTP ${response.statusCode}`));
       }
 
-      const totalBytes = parseInt(response.headers['content-length'], 10);
+      const file = fs.createWriteStream(dest);
+      const totalBytes = parseInt(response.headers["content-length"], 10);
       let downloadedBytes = 0;
 
-      response.on('data', (chunk) => {
+      response.on("data", (chunk) => {
         downloadedBytes += chunk.length;
-        const percent = ((downloadedBytes / totalBytes) * 100).toFixed(1);
-        process.stdout.write(`\r[lumina] Downloading binary... ${percent}%`);
+        if (totalBytes) {
+          const pct = ((downloadedBytes / totalBytes) * 100).toFixed(0);
+          process.stdout.write(`\r[lumina] Downloading... ${pct}%`);
+        }
       });
 
       response.pipe(file);
 
-      file.on('finish', () => {
+      file.on("finish", () => {
         file.close();
-        console.log(""); // New line after progress
+        if (totalBytes) console.log("");
         resolve();
       });
-    }).on('error', (err) => {
-      fs.unlink(dest, () => {});
-      reject(err);
-    });
+
+      file.on("error", (e) => {
+        fs.unlink(dest, () => {});
+        reject(e);
+      });
+    }).on("error", reject);
   });
 }
 
-// Try to build from source (fallback)
-function buildFromSource() {
-  log("Pre-built binary not available. Building from source...");
-  log("This requires Rust to be installed: https://rustup.rs");
-
-  try {
-    execSync("cargo --version", { stdio: "ignore" });
-  } catch {
-    err("Rust not found. Install Rust from https://rustup.rs");
-    err("Then run: npm rebuild lumina-search");
-    process.exit(1);
-  }
-
-  log("Building (this may take 5-10 minutes)...");
-  try {
-    execSync("cargo build --release", {
-      cwd: PKG,
-      stdio: "inherit",
-      timeout: 600000,
-    });
-
-    const src = path.join(PKG, "target", "release", getPlatformInfo().binaryName);
-    const dst = path.join(BIN_DIR, "lumina-bin");
-
-    if (fs.existsSync(src)) {
-      fs.copyFileSync(src, dst);
-      if (platform !== "win32") {
-        fs.chmodSync(dst, 0o755);
-      }
-      log("Build complete!");
-    }
-  } catch (error) {
-    err("Build failed: " + error.message);
-    process.exit(1);
-  }
-}
-
-// Build for Windows via WSL
-function buildWindows() {
-  const { spawnSync } = require("child_process");
-
-  // Check WSL
-  try {
-    execSync("wsl --version", { stdio: "ignore" });
-  } catch {
-    console.error("");
-    console.error("╔════════════════════════════════════════════════════════════╗");
-    console.error("║  Lumina requires WSL (Windows Subsystem for Linux)        ║");
-    console.error("╚════════════════════════════════════════════════════════════╝");
-    console.error("");
-    console.error("Install WSL with these steps:");
-    console.error("");
-    console.error("1. Open PowerShell as Administrator");
-    console.error("2. Run: wsl --install");
-    console.error("3. Restart your computer");
-    console.error("4. Run: npm install -g lumina-search");
-    console.error("");
-    console.error("For more info: https://learn.microsoft.com/en-us/windows/wsl/install");
-    console.error("");
-    process.exit(0);
-  }
-
-  // Check Ubuntu in WSL
-  const wslList = execSync("wsl --list --quiet", { encoding: "utf-8" });
-  if (!wslList.includes("Ubuntu")) {
-    console.error("");
-    console.error("╔════════════════════════════════════════════════════════════╗");
-    console.error("║  Lumina requires WSL Ubuntu to build on Windows           ║");
-    console.error("╚════════════════════════════════════════════════════════════╝");
-    console.error("");
-    console.error("Install WSL Ubuntu with these steps:");
-    console.error("");
-    console.error("1. Open PowerShell as Administrator");
-    console.error("2. Run: wsl --install -d Ubuntu");
-    console.error("3. Restart your computer");
-    console.error("4. Run: npm install -g lumina-search");
-    console.error("");
-    console.error("For more info: https://github.com/JoseZum/lumina#installation");
-    console.error("");
-    process.exit(0);
-  }
-
-  // Convert package path to WSL path
-  const resolved = path.resolve(PKG);
-  const drive = resolved.charAt(0).toLowerCase();
-  const rest = resolved.slice(2).replace(/\\/g, "/");
-  const wslPkg = `/mnt/${drive}${rest}`;
-
-  // Install dir on Linux filesystem
-  const installDir = "$HOME/.local/share/lumina";
-
-  const script = [
-    "set -e",
-    'source "$HOME/.cargo/env" 2>/dev/null || true',
-    "",
-    "# Install Rust if needed",
-    "if ! command -v cargo &>/dev/null; then",
-    '  echo "[lumina] Installing Rust..."',
-    "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y",
-    '  source "$HOME/.cargo/env"',
-    "fi",
-    "",
-    "# Install build tools if needed",
-    "if ! command -v gcc &>/dev/null; then",
-    '  echo "[lumina] Installing build tools..."',
-    "  sudo apt-get update && sudo apt-get install -y build-essential",
-    "fi",
-    "",
-    `# Copy to Linux filesystem`,
-    `INSTALL_DIR="${installDir}"`,
-    `rm -rf "$INSTALL_DIR"`,
-    `mkdir -p "$INSTALL_DIR"`,
-    `cp -r "${wslPkg}"/* "$INSTALL_DIR/"`,
-    "",
-    "# Fix CRLF line endings",
-    `find "$INSTALL_DIR" -name '*.rs' -exec sed -i 's/\\r$//' {} +`,
-    `find "$INSTALL_DIR" -name '*.toml' -exec sed -i 's/\\r$//' {} +`,
-    "",
-    "# Build",
-    'echo "[lumina] Building (this may take a few minutes)..."',
-    `cd "$INSTALL_DIR"`,
-    "cargo build --release",
-    "",
-    'echo "[lumina] Build complete!"',
-  ].join("\n");
-
-  const res = spawnSync("wsl", ["-d", "Ubuntu", "-e", "bash", "-c", script], {
-    stdio: "inherit",
-    timeout: 600000,
-  });
-
-  if (res.status !== 0) {
-    err("WSL build failed.");
-    err("Try manually: wsl -d Ubuntu bash -c 'cd ~/.local/share/lumina && cargo build --release'");
-    process.exit(1);
-  }
-
-  log("Done! Binary built in WSL.");
-  log("The lumina command will run via WSL automatically.");
-}
+// ── Main ──
 
 async function main() {
-  log(`Installing for ${platform}-${arch}...`);
+  const platformKey = `${os.platform()}-${os.arch()}`;
 
   // Skip in CI
   if (process.env.CI) {
@@ -228,58 +131,61 @@ async function main() {
     return;
   }
 
-  // Windows: Use WSL build for now (pre-built Windows binary coming soon)
-  if (platform === "win32") {
-    log("Windows detected — using WSL build...");
-    buildWindows();
-    return;
-  }
+  const info = PLATFORMS[platformKey];
 
-  const platformInfo = getPlatformInfo();
-
-  if (!platformInfo) {
-    err(`Unsupported platform: ${platform}-${arch}`);
-    err("Lumina supports: Windows x64, macOS (x64/arm64), Linux x64");
+  if (!info) {
+    err(`Unsupported platform: ${platformKey}`);
+    err(`Lumina supports: ${Object.keys(PLATFORMS).join(", ")}`);
+    err("See https://github.com/JoseZum/lumina for details.");
     process.exit(1);
   }
 
-  const { platformName, binaryName } = platformInfo;
+  log(`Installing for ${platformKey}...`);
 
-  // Get latest release version
+  // 1. Check if platform npm package already has the binary
+  if (hasPlatformBinary(info)) {
+    log("Binary found via platform package. Done!");
+    return;
+  }
+
+  // 2. Download from GitHub Releases
   const packageJson = require(path.join(PKG, "package.json"));
   const version = packageJson.version;
+  const url = `https://github.com/JoseZum/lumina/releases/download/v${version}/${info.artifact}`;
+  const dest = path.join(BIN_DIR, info.localBin);
 
-  const binaryUrl = `https://github.com/JoseZum/lumina/releases/download/v${version}/lumina-${platformName}${binaryName === "lumina.exe" ? ".exe" : ""}`;
-  const binaryPath = path.join(BIN_DIR, "lumina-bin" + (binaryName === "lumina.exe" ? ".exe" : ""));
-
-  // Ensure bin directory exists
   if (!fs.existsSync(BIN_DIR)) {
     fs.mkdirSync(BIN_DIR, { recursive: true });
   }
 
-  log(`Downloading pre-built binary from GitHub Releases...`);
-  log(`URL: ${binaryUrl}`);
+  log(`Downloading binary from GitHub Releases (v${version})...`);
 
   try {
-    await downloadFile(binaryUrl, binaryPath);
+    await downloadFile(url, dest);
 
     // Make executable on Unix
-    if (platform !== "win32") {
-      fs.chmodSync(binaryPath, 0o755);
+    if (os.platform() !== "win32") {
+      fs.chmodSync(dest, 0o755);
     }
 
     log("Installation complete!");
-    log(`Binary installed to: ${binaryPath}`);
-    log("");
-    log("Run 'lumina --help' to get started");
+    log("Run 'lumina --help' to get started.");
   } catch (error) {
-    log(`Download failed: ${error.message}`);
-    log("Falling back to building from source...");
-    buildFromSource();
+    err(`Download failed: ${error.message}`);
+    err("");
+    err("This usually means:");
+    err(`  - Release v${version} doesn't have a binary for ${platformKey}`);
+    err("  - GitHub is temporarily unreachable");
+    err("");
+    err("You can build from source instead:");
+    err("  1. Install Rust: https://rustup.rs");
+    err("  2. Run: cargo build --release");
+    err(`  3. Copy target/release/lumina to ${BIN_DIR}/`);
+    process.exit(1);
   }
 }
 
 main().catch((error) => {
-  err("Installation failed: " + error.message);
+  err(`Installation failed: ${error.message}`);
   process.exit(1);
 });

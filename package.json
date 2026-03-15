@@ -1,6 +1,6 @@
 {
   "name": "lumina-search",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Local-first semantic code search for Claude Code via MCP",
   "license": "Apache-2.0",
   "repository": {
@@ -13,6 +13,13 @@
   "scripts": {
     "postinstall": "node scripts/postinstall.js"
   },
+  "optionalDependencies": {
+    "@lumina-search/win32-x64": "0.3.0",
+    "@lumina-search/darwin-arm64": "0.3.0",
+    "@lumina-search/darwin-x64": "0.3.0",
+    "@lumina-search/linux-x64": "0.3.0",
+    "@lumina-search/linux-arm64": "0.3.0"
+  },
   "keywords": [
     "mcp",
     "claude",
@@ -24,11 +31,8 @@
   "author": "Jose Zumbado josezumbru@gmail.com",
   "homepage": "https://github.com/JoseZum/lumina",
   "files": [
-    "bin/",
+    "bin/lumina.js",
     "scripts/",
-    "src/",
-    "Cargo.toml",
-    "Cargo.lock",
     "README.md"
   ],
   "engines": {

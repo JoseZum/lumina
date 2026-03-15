@@ -1,0 +1,13 @@
+{
+  "name": "@lumina-search/darwin-x64",
+  "version": "0.3.0",
+  "description": "Lumina native binary for macOS x64 (Intel)",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JoseZum/lumina.git"
+  },
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "files": ["bin/lumina"]
+}

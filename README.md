@@ -103,7 +103,8 @@ npm install -g lumina-search
 
 **Requirements:**
 - Node.js >= 18
-- Windows users need [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)
+
+**Supported platforms:** Windows x64, macOS (ARM64 + Intel), Linux (x64 + ARM64)
 
 ### 2. Setup (2 minutes)
 
@@ -580,22 +581,16 @@ Should output a JSON-RPC response. If not, check Claude Code logs at `~/.claude/
 
 ### Windows: "lumina not found"
 
-Lumina on Windows uses WSL (Windows Subsystem for Linux) to compile and run.
-
 **Fix:**
 ```bash
-# 1. Check WSL is installed
-wsl --version
-
-# 2. Check Ubuntu is installed
-wsl --list
-
-# 3. If not installed:
-wsl --install -d Ubuntu
-
-# 4. Reinstall Lumina
+# Reinstall — downloads a native Windows binary
 npm install -g lumina-search
+
+# Verify
+lumina --version
 ```
+
+If the binary still isn't found, check that npm's global `bin` directory is in your PATH.
 
 ### Search results are bad quality
 
@@ -634,17 +629,14 @@ Edit `.lumina/config.toml`:
 max_file_size = 524288  # 512 KB (skip files larger than this)
 ```
 
-### Build errors during npm install
+### Binary download fails during npm install
 
-If pre-built binaries aren't available for your platform, Lumina falls back to building from source.
+If the pre-built binary can't be downloaded (e.g., behind a corporate proxy), you can build from source:
 
-**Requirements:**
-- Rust toolchain: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-- C compiler: `sudo apt-get install build-essential` (Linux) or Xcode Command Line Tools (macOS)
-
-**Rebuild:**
 ```bash
-npm rebuild lumina-search
+# Install Rust: https://rustup.rs
+cargo build --release
+# Binary will be at target/release/lumina
 ```
 
 ---

@@ -1,0 +1,13 @@
+{
+  "name": "@lumina-search/win32-x64",
+  "version": "0.3.0",
+  "description": "Lumina native binary for Windows x64",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JoseZum/lumina.git"
+  },
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "files": ["bin/lumina.exe"]
+}

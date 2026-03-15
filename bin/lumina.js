@@ -5,144 +5,88 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 
-// ── Find the binary ──
+// Platform → npm package name mapping
+const PLATFORM_PACKAGES = {
+  "win32-x64": { pkg: "@lumina-search/win32-x64", bin: "bin/lumina.exe" },
+  "darwin-arm64": { pkg: "@lumina-search/darwin-arm64", bin: "bin/lumina" },
+  "darwin-x64": { pkg: "@lumina-search/darwin-x64", bin: "bin/lumina" },
+  "linux-x64": { pkg: "@lumina-search/linux-x64", bin: "bin/lumina" },
+  "linux-arm64": { pkg: "@lumina-search/linux-arm64", bin: "bin/lumina" },
+};
+
+function getPlatformKey() {
+  return `${os.platform()}-${os.arch()}`;
+}
 
 function findBinary() {
-  const platform = os.platform();
+  const platformKey = getPlatformKey();
   const pkg = path.resolve(__dirname, "..");
+  const isWindows = os.platform() === "win32";
+  const ext = isWindows ? ".exe" : "";
 
-  // 1. Check for pre-built binary next to this script
-  const localBin =
-    platform === "win32"
-      ? path.join(pkg, "bin", "lumina.exe")
-      : path.join(pkg, "bin", "lumina-bin");
+  // 1. Try platform-specific npm package (Phase 2 — best path)
+  const platformInfo = PLATFORM_PACKAGES[platformKey];
+  if (platformInfo) {
+    try {
+      const pkgDir = path.dirname(require.resolve(`${platformInfo.pkg}/package.json`));
+      const binPath = path.join(pkgDir, platformInfo.bin);
+      if (fs.existsSync(binPath)) {
+        return binPath;
+      }
+    } catch {
+      // Package not installed — fall through
+    }
+  }
 
+  // 2. Try pre-downloaded binary (from postinstall)
+  const localBin = path.join(pkg, "bin", `lumina-bin${ext}`);
   if (fs.existsSync(localBin)) {
-    return { type: "local", path: localBin };
+    return localBin;
   }
 
-  // 2. Check for cargo-built binary in target/release
-  const cargoBin = path.join(pkg, "target", "release", "lumina");
+  // 3. Try cargo-built binary (dev / build-from-source)
+  const cargoBin = path.join(pkg, "target", "release", `lumina${ext}`);
   if (fs.existsSync(cargoBin)) {
-    return { type: "local", path: cargoBin };
-  }
-
-  const cargoBinExe = path.join(pkg, "target", "release", "lumina.exe");
-  if (fs.existsSync(cargoBinExe)) {
-    return { type: "local", path: cargoBinExe };
-  }
-
-  // 3. Check if installed in WSL (Windows only)
-  if (platform === "win32") {
-    return { type: "wsl", path: "$HOME/.local/share/lumina/target/release/lumina" };
-  }
-
-  // 4. Check global install in ~/.local/share/lumina
-  const globalBin = path.join(
-    os.homedir(),
-    ".local",
-    "share",
-    "lumina",
-    "target",
-    "release",
-    "lumina"
-  );
-  if (fs.existsSync(globalBin)) {
-    return { type: "local", path: globalBin };
+    return cargoBin;
   }
 
   return null;
 }
 
-// ── Resolve repo path for WSL ──
-
-function toWslPath(winPath) {
-  // Convert C:\Users\foo → /mnt/c/Users/foo
-  const resolved = path.resolve(winPath);
-  const drive = resolved.charAt(0).toLowerCase();
-  const rest = resolved.slice(2).replace(/\\/g, "/");
-  return `/mnt/${drive}${rest}`;
-}
-
-// ── Main ──
-
 function main() {
   const args = process.argv.slice(2);
-  const binary = findBinary();
+  const binaryPath = findBinary();
 
-  if (!binary) {
+  if (!binaryPath) {
+    const platformKey = getPlatformKey();
+    const supported = Object.keys(PLATFORM_PACKAGES);
+
+    if (!supported.includes(platformKey)) {
+      console.error(`Error: Unsupported platform: ${platformKey}`);
+      console.error(`Lumina supports: ${supported.join(", ")}`);
+      process.exit(1);
+    }
+
     console.error("Error: Lumina binary not found.");
     console.error("");
-    console.error("Run the postinstall script to build it:");
-    console.error("  node scripts/postinstall.js");
+    console.error("Try reinstalling:");
+    console.error("  npm install -g lumina-search");
     console.error("");
-    console.error("Or build manually:");
+    console.error("Or build from source:");
     console.error("  cargo build --release");
     process.exit(1);
   }
 
-  // Convert --repo paths to WSL paths if on Windows + WSL mode
-  let finalArgs = [...args];
+  const child = spawn(binaryPath, args, {
+    stdio: "inherit",
+    env: process.env,
+  });
 
-  if (binary.type === "wsl") {
-    // Rewrite --repo argument to WSL path
-    const repoIdx = finalArgs.indexOf("--repo");
-    if (repoIdx !== -1 && repoIdx + 1 < finalArgs.length) {
-      const repoPath = finalArgs[repoIdx + 1];
-      // Only convert if it looks like a Windows path
-      if (/^[A-Za-z]:/.test(repoPath) || repoPath.includes("\\")) {
-        finalArgs[repoIdx + 1] = toWslPath(repoPath);
-      }
-    }
-
-    // If --repo is not specified, default to current directory
-    if (!finalArgs.includes("--repo") && !["--help", "--version", "-h", "-V"].some(f => finalArgs.includes(f))) {
-      const subcommands = ["index", "query", "mcp", "status"];
-      if (subcommands.some(s => finalArgs.includes(s))) {
-        finalArgs.push("--repo", toWslPath(process.cwd()));
-      }
-    }
-
-    // Build env string for WSL
-    const envParts = [];
-    if (process.env.VOYAGE_API_KEY) {
-      envParts.push(`VOYAGE_API_KEY=${process.env.VOYAGE_API_KEY}`);
-    }
-    if (process.env.OPENAI_API_KEY) {
-      envParts.push(`OPENAI_API_KEY=${process.env.OPENAI_API_KEY}`);
-    }
-
-    const envPrefix = envParts.length > 0 ? envParts.join(" ") + " " : "";
-    const cmd = `source $HOME/.cargo/env 2>/dev/null; ${envPrefix}${binary.path} ${finalArgs.join(" ")}`;
-
-    const child = spawn("wsl", ["-e", "bash", "-c", cmd], {
-      stdio: "inherit",
-      env: process.env,
-    });
-
-    child.on("exit", (code) => process.exit(code || 0));
-    child.on("error", (err) => {
-      if (err.code === "ENOENT") {
-        console.error("Error: WSL not found. Install WSL first:");
-        console.error("  wsl --install");
-      } else {
-        console.error("Error:", err.message);
-      }
-      process.exit(1);
-    });
-  } else {
-    // Direct binary execution (Linux/Mac or Windows with local binary)
-    const child = spawn(binary.path, finalArgs, {
-      stdio: "inherit",
-      env: process.env,
-    });
-
-    child.on("exit", (code) => process.exit(code || 0));
-    child.on("error", (err) => {
-      console.error("Error:", err.message);
-      process.exit(1);
-    });
-  }
+  child.on("exit", (code) => process.exit(code || 0));
+  child.on("error", (err) => {
+    console.error(`Error executing lumina: ${err.message}`);
+    process.exit(1);
+  });
 }
 
 main();

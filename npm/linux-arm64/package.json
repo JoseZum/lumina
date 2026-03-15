@@ -1,0 +1,13 @@
+{
+  "name": "@lumina-search/linux-arm64",
+  "version": "0.3.0",
+  "description": "Lumina native binary for Linux ARM64",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JoseZum/lumina.git"
+  },
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "files": ["bin/lumina"]
+}
