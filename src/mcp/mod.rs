@@ -2,22 +2,29 @@ pub mod handler;
 pub mod protocol;
 pub mod tools;
 
+use crate::config::LuminaConfig;
+use crate::mcp::handler::HandlerResult;
 use crate::mcp::protocol::JsonRpcRequest;
-use crate::search::SearchEngine;
 use std::io::{self, BufRead, Write};
 use tracing::{debug, error, info};
 
 /// Run the MCP server over stdio (NDJSON transport).
+///
+/// Creates and manages the SearchEngine lifecycle internally.
+/// On `index_repository` tool calls, rebuilds the engine to pick up new data.
 ///
 /// Protocol: newline-delimited JSON-RPC 2.0
 /// - Read one line from stdin = one JSON-RPC request
 /// - Write one line to stdout = one JSON-RPC response
 /// - stderr is used for logging (never pollute stdout)
 /// - Flush stdout after every write
-pub fn run_server(engine: SearchEngine, token_budget: usize) -> io::Result<()> {
+pub fn run_server(config: LuminaConfig) -> io::Result<()> {
     let stdin = io::stdin();
     let mut stdout = io::stdout();
     let reader = stdin.lock();
+
+    let mut engine = crate::create_search_engine(&config)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
     info!("Lumina MCP server starting...");
 
@@ -55,13 +62,36 @@ pub fn run_server(engine: SearchEngine, token_budget: usize) -> io::Result<()> {
         };
 
         // Dispatch request
-        if let Some(response) = handler::handle_request(&request, &engine, token_budget) {
-            let json = serde_json::to_string(&response).unwrap();
-            debug!("→ {}", json);
-            writeln!(stdout, "{}", json)?;
-            stdout.flush()?;
+        match handler::handle_request(&request, &engine, &config) {
+            HandlerResult::Response(Some(response)) => {
+                let json = serde_json::to_string(&response).unwrap();
+                debug!("→ {}", json);
+                writeln!(stdout, "{}", json)?;
+                stdout.flush()?;
+            }
+            HandlerResult::Response(None) => {
+                // Notification — no response needed
+            }
+            HandlerResult::RebuildEngine(response) => {
+                // Send the response first
+                let json = serde_json::to_string(&response).unwrap();
+                debug!("→ {}", json);
+                writeln!(stdout, "{}", json)?;
+                stdout.flush()?;
+
+                // Rebuild the SearchEngine to pick up new index data
+                info!("Rebuilding SearchEngine after index update...");
+                match crate::create_search_engine(&config) {
+                    Ok(new_engine) => {
+                        engine = new_engine;
+                        info!("SearchEngine rebuilt successfully.");
+                    }
+                    Err(e) => {
+                        error!("Failed to rebuild SearchEngine: {}", e);
+                    }
+                }
+            }
         }
-        // If None, it was a notification — no response needed
     }
 
     info!("Lumina MCP server shutting down.");

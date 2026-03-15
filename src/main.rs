@@ -331,8 +331,7 @@ fn main() -> Result<()> {
                 std::fs::create_dir_all(&config.data_dir)?;
             }
 
-            let engine = lumina::create_search_engine(&config)?;
-            lumina::mcp::run_server(engine, config.response_token_budget)?;
+            lumina::mcp::run_server(config)?;
         }
 
         Commands::Status { repo } => {

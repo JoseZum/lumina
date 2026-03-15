@@ -79,11 +79,21 @@ pub struct ServerInfo {
 // ── Tool Types ──
 
 #[derive(Debug, Serialize)]
+pub struct ToolAnnotations {
+    #[serde(rename = "readOnlyHint", skip_serializing_if = "Option::is_none")]
+    pub read_only_hint: Option<bool>,
+    #[serde(rename = "destructiveHint", skip_serializing_if = "Option::is_none")]
+    pub destructive_hint: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct ToolDefinition {
     pub name: String,
     pub description: String,
     #[serde(rename = "inputSchema")]
     pub input_schema: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<ToolAnnotations>,
 }
 
 #[derive(Debug, Serialize)]
