@@ -108,6 +108,9 @@ function main() {
     if (process.env.VOYAGE_API_KEY) {
       envParts.push(`VOYAGE_API_KEY=${process.env.VOYAGE_API_KEY}`);
     }
+    if (process.env.OPENAI_API_KEY) {
+      envParts.push(`OPENAI_API_KEY=${process.env.OPENAI_API_KEY}`);
+    }
 
     const envPrefix = envParts.length > 0 ? envParts.join(" ") + " " : "";
     const cmd = `source $HOME/.cargo/env 2>/dev/null; ${envPrefix}${binary.path} ${finalArgs.join(" ")}`;
