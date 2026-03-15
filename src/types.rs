@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 /// One Chunk = one semantic code block (function, class, method, etc.)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chunk {
-    /// SHA-256 hash of `self.text`. Serves as unique ID.
-    /// Deterministic: same code content → same ID, regardless of file path.
+    /// SHA-256 hash of file path + start line + text. Serves as unique ID.
+    /// Deterministic: same file, line, and content → same ID.
     pub id: String,
 
     /// File path relative to repository root.

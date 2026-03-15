@@ -19,8 +19,12 @@ impl TreeSitterChunker {
         }
     }
 
-    fn calculate_id(text: &str) -> String {
+    fn calculate_id(file: &str, start_line: u32, text: &str) -> String {
         let mut hasher = Sha256::new();
+        hasher.update(file.as_bytes());
+        hasher.update(b":");
+        hasher.update(start_line.to_string().as_bytes());
+        hasher.update(b":");
         hasher.update(text.as_bytes());
         hex::encode(hasher.finalize())
     }
@@ -32,6 +36,58 @@ impl TreeSitterChunker {
             .join("\n")
             .trim()
             .to_string()
+    }
+
+    /// Split an oversized chunk into sub-chunks by line boundaries with overlap.
+    fn split_chunk(
+        &self,
+        file: &str,
+        symbol: &str,
+        kind: SymbolKind,
+        text: &str,
+        start_line: u32,
+        language: &str,
+    ) -> Vec<Chunk> {
+        let lines: Vec<&str> = text.lines().collect();
+        let target_chars = self.max_tokens * 4; // ~max_tokens tokens
+        let overlap_lines = 3;
+        let mut chunks = Vec::new();
+        let mut part = 1;
+        let mut i = 0;
+
+        while i < lines.len() {
+            let mut end = i;
+            let mut char_count = 0;
+            while end < lines.len() && char_count < target_chars {
+                char_count += lines[end].len() + 1;
+                end += 1;
+            }
+
+            let chunk_text = lines[i..end].join("\n");
+            let chunk_start = start_line + i as u32;
+            let chunk_end = start_line + (end - 1) as u32;
+            let part_symbol = if lines.len() > end - i {
+                format!("{} (part {})", symbol, part)
+            } else {
+                symbol.to_string()
+            };
+
+            chunks.push(Chunk {
+                id: Self::calculate_id(file, chunk_start, &chunk_text),
+                file: file.to_string(),
+                symbol: part_symbol,
+                kind,
+                start_line: chunk_start,
+                end_line: chunk_end,
+                language: language.to_string(),
+                text: chunk_text,
+                embedding: None,
+            });
+
+            i = if end >= lines.len() { end } else { end.saturating_sub(overlap_lines) };
+            part += 1;
+        }
+        chunks
     }
 }
 
@@ -122,22 +178,27 @@ impl Chunker for TreeSitterChunker {
                 // Very basic token count estimate (characters / 4)
                 let estimated_tokens = (clean_text.len() + 3) / 4;
 
-                // Only include if it meets minimum token size and doesn't exceed max strongly
+                let start_line = (node.start_position().row + 1) as u32;
+
                 if estimated_tokens >= self.min_tokens && estimated_tokens <= self.max_tokens {
                     chunks.push(Chunk {
-                        id: Self::calculate_id(&clean_text),
+                        id: Self::calculate_id(&file_path, start_line, &clean_text),
                         file: file_path.clone(),
                         symbol: name_text,
                         kind,
-                        start_line: (node.start_position().row + 1) as u32,
+                        start_line,
                         end_line: (node.end_position().row + 1) as u32,
                         language: config.name.to_string(),
                         text: clean_text,
                         embedding: None,
                     });
+                } else if estimated_tokens > self.max_tokens {
+                    chunks.extend(self.split_chunk(
+                        &file_path, &name_text, kind, &clean_text,
+                        start_line, config.name,
+                    ));
                 }
-                // TODO: Add logic to split chunks cleanly if they exceed max_tokens, 
-                // and merge top level orphaned code segments if needed.
+                // Chunks below min_tokens are skipped (too small to be useful)
             }
         }
 
@@ -148,7 +209,7 @@ impl Chunker for TreeSitterChunker {
             
             if estimated_tokens <= self.max_tokens {
                 chunks.push(Chunk {
-                    id: Self::calculate_id(&clean_text),
+                    id: Self::calculate_id(&file_path, 1, &clean_text),
                     file: file_path,
                     symbol: String::new(),
                     kind: SymbolKind::TopLevel,
@@ -158,6 +219,11 @@ impl Chunker for TreeSitterChunker {
                     text: clean_text,
                     embedding: None,
                 });
+            } else {
+                chunks.extend(self.split_chunk(
+                    &file_path, "", SymbolKind::TopLevel, &clean_text,
+                    1, config.name,
+                ));
             }
         }
 

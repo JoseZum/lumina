@@ -15,7 +15,7 @@ use crate::chunker::TreeSitterChunker;
 use crate::config::LuminaConfig;
 use crate::error::Result;
 use crate::indexer::Indexer;
-use crate::search::reranker::NoopReranker;
+use crate::search::reranker::{JinaReranker, NoopReranker, Reranker};
 use crate::search::SearchEngine;
 use crate::store::lance::LanceStore;
 use crate::store::tantivy_store::TantivyStore;
@@ -47,7 +47,11 @@ pub fn create_search_engine(config: &LuminaConfig) -> Result<SearchEngine> {
         config.embedding_dimensions,
     )?);
     let keyword_store = Box::new(TantivyStore::new(&config.tantivy_path())?);
-    let reranker = Box::new(NoopReranker);
+    let reranker: Box<dyn Reranker> = if let Some(ref key) = config.reranker_api_key {
+        Box::new(JinaReranker::new(key.clone(), config.reranker_model.clone()))
+    } else {
+        Box::new(NoopReranker)
+    };
 
     Ok(SearchEngine::new(
         vector_store,

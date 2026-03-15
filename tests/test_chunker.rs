@@ -72,12 +72,17 @@ pub fn hello() {
     println!("hello");
 }
 "#;
+    // Same file + same content → same ID
     let chunks1 = chunker.chunk_file(Path::new("a.rs"), code).unwrap();
-    let chunks2 = chunker.chunk_file(Path::new("b.rs"), code).unwrap();
+    let chunks1b = chunker.chunk_file(Path::new("a.rs"), code).unwrap();
+    if !chunks1.is_empty() && !chunks1b.is_empty() {
+        assert_eq!(chunks1[0].id, chunks1b[0].id, "Same file+content should produce same ID");
+    }
 
-    // Same code content should produce same chunk ID regardless of file path
+    // Different file + same content → different ID (prevents collisions)
+    let chunks2 = chunker.chunk_file(Path::new("b.rs"), code).unwrap();
     if !chunks1.is_empty() && !chunks2.is_empty() {
-        assert_eq!(chunks1[0].id, chunks2[0].id);
+        assert_ne!(chunks1[0].id, chunks2[0].id, "Different files should produce different IDs");
     }
 }
 

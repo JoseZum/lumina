@@ -62,6 +62,17 @@ impl SearchEngine {
         Ok(results)
     }
 
+    /// Semantic search scoped to a specific directory using native store filters.
+    pub fn search_in_directory(&self, query: &str, directory: &str, k: usize) -> Result<Vec<SearchResult>> {
+        let query_embedding = self.embedder.embed_query(query)?;
+        let vector_results = self.vector_store
+            .search_filtered(&query_embedding, self.config.search_k_vector, directory)?;
+        let keyword_results = self.keyword_store
+            .search_filtered(query, self.config.search_k_keyword, directory)?;
+        let fused = rrf::rrf_merge(vector_results, keyword_results, self.config.rrf_k);
+        self.reranker.rerank(query, fused, k)
+    }
+
     /// Find symbols by name via keyword store.
     pub fn find_symbol(&self, name: &str, limit: usize) -> Result<Vec<SearchResult>> {
         self.keyword_store.search_symbol(name, limit)

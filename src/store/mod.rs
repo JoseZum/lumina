@@ -12,6 +12,15 @@ pub trait VectorStore: Send + Sync {
     /// Search for similar chunks by embedding vector
     fn search(&self, embedding: &[f32], limit: usize) -> Result<Vec<SearchResult>>;
 
+    /// Search with a file path prefix filter. Default: search then filter.
+    fn search_filtered(&self, embedding: &[f32], limit: usize, file_prefix: &str) -> Result<Vec<SearchResult>> {
+        let results = self.search(embedding, limit * 5)?;
+        Ok(results.into_iter()
+            .filter(|r| r.file.starts_with(file_prefix) || r.file.starts_with(&format!("{}/", file_prefix)))
+            .take(limit)
+            .collect())
+    }
+
     /// Delete all chunks belonging to a specific file
     fn delete_by_file(&self, file_path: &str) -> Result<()>;
 
@@ -26,6 +35,15 @@ pub trait KeywordStore: Send + Sync {
 
     /// Full-text keyword search
     fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>>;
+
+    /// Keyword search with a file path prefix filter. Default: search then filter.
+    fn search_filtered(&self, query: &str, limit: usize, file_prefix: &str) -> Result<Vec<SearchResult>> {
+        let results = self.search(query, limit * 5)?;
+        Ok(results.into_iter()
+            .filter(|r| r.file.starts_with(file_prefix) || r.file.starts_with(&format!("{}/", file_prefix)))
+            .take(limit)
+            .collect())
+    }
 
     /// Search for symbols by name (exact or prefix match)
     fn search_symbol(&self, symbol_name: &str, limit: usize) -> Result<Vec<SearchResult>>;

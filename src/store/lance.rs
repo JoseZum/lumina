@@ -323,6 +323,52 @@ impl VectorStore for LanceStore {
         })
     }
 
+    fn search_filtered(&self, embedding: &[f32], limit: usize, file_prefix: &str) -> Result<Vec<SearchResult>> {
+        self.rt.block_on(async {
+            let table_names = self
+                .db
+                .table_names()
+                .execute()
+                .await
+                .map_err(|e| LuminaError::VectorStoreError(e.to_string()))?;
+
+            if !table_names.contains(&TABLE_NAME.to_string()) {
+                return Ok(Vec::new());
+            }
+
+            let table = self
+                .db
+                .open_table(TABLE_NAME)
+                .execute()
+                .await
+                .map_err(|e| LuminaError::VectorStoreError(e.to_string()))?;
+
+            let filter_expr = format!("file LIKE '{}%'", file_prefix.replace('\'', "''"));
+            let query = table
+                .vector_search(embedding)
+                .map_err(|e| LuminaError::VectorStoreError(e.to_string()))?;
+            let results = query
+                .only_if(filter_expr)
+                .limit(limit)
+                .execute()
+                .await
+                .map_err(|e| LuminaError::VectorStoreError(e.to_string()))?;
+
+            use futures::TryStreamExt;
+            let batches: Vec<RecordBatch> = results
+                .try_collect()
+                .await
+                .map_err(|e| LuminaError::VectorStoreError(e.to_string()))?;
+
+            let mut all_results = Vec::new();
+            for batch in &batches {
+                all_results.extend(Self::batch_to_results(batch)?);
+            }
+
+            Ok(all_results)
+        })
+    }
+
     fn count(&self) -> Result<usize> {
         self.rt.block_on(async {
             let table_names = self

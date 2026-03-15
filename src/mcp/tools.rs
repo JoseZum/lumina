@@ -246,28 +246,16 @@ fn handle_search_in_directory(engine: &SearchEngine, args: &Value, budget: usize
         .unwrap_or(5)
         .min(20) as usize;
 
-    // Search with a larger k, then filter by directory prefix
-    let search_k = (k * 5).min(50);
-
-    match engine.semantic_search(query, search_k) {
+    match engine.search_in_directory(query, directory, k) {
         Ok(results) => {
-            let filtered: Vec<_> = results
-                .into_iter()
-                .filter(|r| {
-                    r.file.starts_with(directory)
-                        || r.file.starts_with(&format!("{}/", directory))
-                })
-                .take(k)
-                .collect();
-
-            if filtered.is_empty() {
+            if results.is_empty() {
                 return ToolResult::text(format!(
                     "No results found for '{}' in directory '{}'",
                     query, directory
                 ));
             }
 
-            let formatted = engine.format_results(query, &filtered, budget);
+            let formatted = engine.format_results(query, &results, budget);
             ToolResult::text(formatted)
         }
         Err(e) => ToolResult::error(format!("Search failed: {}", e)),
