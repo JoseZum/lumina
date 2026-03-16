@@ -37,7 +37,7 @@ jobs:
             npm_dir: darwin-arm64
             npm_bin: lumina
 
-          - os: macos-12
+          - os: macos-latest
             platform: macos-x64
             target: x86_64-apple-darwin
             binary: lumina
