@@ -37,14 +37,6 @@ jobs:
             npm_dir: darwin-arm64
             npm_bin: lumina
 
-          - os: macos-latest
-            platform: macos-x64
-            target: x86_64-apple-darwin
-            binary: lumina
-            artifact: lumina-macos-x64
-            npm_dir: darwin-x64
-            npm_bin: lumina
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -149,17 +141,11 @@ jobs:
           name: npm-darwin-arm64
           path: npm/darwin-arm64/
 
-      - name: Download darwin-x64
-        uses: actions/download-artifact@v4
-        with:
-          name: npm-darwin-x64
-          path: npm/darwin-x64/
-
       # Verify every platform package contains a binary before publishing
       - name: Verify platform package contents
         run: |
           FAIL=0
-          for dir in win32-x64 darwin-arm64 darwin-x64 linux-x64; do
+          for dir in win32-x64 darwin-arm64 linux-x64; do
             if [ ! -d "npm/$dir/bin" ] || [ -z "$(ls -A npm/$dir/bin/ 2>/dev/null)" ]; then
               echo "FATAL: npm/$dir/bin/ is missing or empty"
               FAIL=1
@@ -188,12 +174,6 @@ jobs:
 
       - name: Publish @lumina-search/darwin-arm64
         working-directory: npm/darwin-arm64
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish @lumina-search/darwin-x64
-        working-directory: npm/darwin-x64
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

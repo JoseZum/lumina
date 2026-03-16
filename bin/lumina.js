@@ -9,7 +9,6 @@ const os = require("os");
 const PLATFORM_PACKAGES = {
   "win32-x64": { pkg: "@lumina-search/win32-x64", bin: "bin/lumina.exe" },
   "darwin-arm64": { pkg: "@lumina-search/darwin-arm64", bin: "bin/lumina" },
-  "darwin-x64": { pkg: "@lumina-search/darwin-x64", bin: "bin/lumina" },
   "linux-x64": { pkg: "@lumina-search/linux-x64", bin: "bin/lumina" },
 };
 
